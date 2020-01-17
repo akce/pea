@@ -21,17 +21,35 @@
 
     track? track-path track-title
 
+    ;; general factory func.
+    playlist-read
     ;; .m3u .m3u8 files.
     m3u-read
     ;; .pls files.
     pls-read)
   (import
     (rnrs)
-    (irregex))
+    (irregex)
+    (only (chezscheme) path-extension))
 
   ;; Simple track record.
   (define-record-type track
     (fields path title))
+
+  ;; [proc] playlist-read: reads known playlist types and returns contained tracks.
+  ;; An empty playlist is returned for unknown playlist file types.
+  (define playlist-read
+    (lambda (path)
+      (let ([ext (path-extension path)])
+        (cond
+          [(or
+             (string-ci=? "m3u" ext)
+             (string-ci=? "m3u8" ext))
+           (m3u-read path)]
+          [(string-ci=? "pls" ext)
+           (pls-read path)]
+          [else
+            '#()]))))
 
   ;;;; Filetype: M3U M3U8 */*mpegurl
   ;; For further detail:
