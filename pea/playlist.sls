@@ -2,6 +2,9 @@
 ;;
 ;; TODO do playlist format types as custom port type? Access via get-track etc.
 ;;
+;; Both m3u and pls formats have an unofficial spec at:
+;;   http://forums.winamp.com/showthread.php?threadid=65772
+;;
 ;; Written by Akce 2020.
 ;; SPDX-License-Identifier: Unlicense
 (library
@@ -18,6 +21,8 @@
 
     track? track-path track-title
 
+    ;; .m3u .m3u8 files.
+    m3u-read
     ;; .pls files.
     pls-read)
   (import
@@ -27,6 +32,52 @@
   ;; Simple track record.
   (define-record-type track
     (fields path title))
+
+  ;;;; Filetype: M3U M3U8 */*mpegurl
+  ;; For further detail:
+  ;;   https://en.wikipedia.org/wiki/M3U
+  ;; RFC using a much expanded m3u as the playlist format for media streaming:
+  ;;   https://tools.ietf.org/html/rfc8216
+
+  ;; [proc] m3u-read: Returns a playlist of tracks from the m3u file.
+  ;; Simple parser that reads paths and optionally #EXTINF track titles.
+  (define m3u-read
+    (lambda (path)
+      (let loop ([lines (slurp path)] [tracks '()] [title #f])
+        (cond
+          [(null? lines)
+           (list->vector (reverse tracks))]
+          [(m3u-parse-title (car lines)) => (lambda (x)
+                                              (loop (cdr lines) tracks x))]
+          [(m3u-empty-line? (car lines))
+           ;; skip blank lines.
+           (loop (cdr lines) tracks title)]
+          [else
+            (loop (cdr lines) (cons (make-track (car lines) title) tracks) #f)]))))
+
+  ;; [proc] m3u-parse-title: Extract title from EXTINF metadata line.
+  ;; #f if the line is not an EXTINF metadata line.
+  ;; Note that a trailing : is treated as part of the title despite the description from the unofficial spec.
+  ;; No one seems to use them, and even the examples on that page don't have trailing colons.
+  (define m3u-parse-title
+    (let ([p (irregex '(w/nocase "#EXTINF:" (* (~ #\,) ) #\, (submatch (* nonl))))])
+      (lambda (line)
+        (let ([m (irregex-search p line)])
+          (if (irregex-match-data? m)
+              (irregex-match-substring m 1)
+              #f)))))
+
+  ;; [proc] m3u-empty-line?: #t if line is empty.
+  ;; Comments and leading whitespace are ignored.
+  (define m3u-empty-line?
+    (lambda (line)
+      (= 0 (string-length (m3u-strip line)))))
+
+  ;; [proc] m3u-strip-comments: strips everything after the comment characters.
+  (define m3u-strip
+    (let ([p (irregex '(w/nocase (* space) (submatch (* (~ #\#)))))])
+      (lambda (line)
+        (irregex-match-substring (irregex-search p line) 1))))
 
   ;;;; Filetype: PLS audio/x-scpls
   ;; Follows m$ ini conventions with [playlist] as the section name and entries:
