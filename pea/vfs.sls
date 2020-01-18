@@ -106,7 +106,9 @@
             (hashtable-keys vfs-state))
           outp)
         (newline outp)
-        (display ";; vim: ft=scheme" outp)
+        ;; Split the modeline to stop vim from using it when editing this actual source file.
+        ;; Modeline is typically scanned in the bottom 5 lines. See :help mls in vim.
+        (display ";; v" outp)(display "im:set ft=scheme" outp)
         (newline outp)
         ;; TODO? enclose this in a dynamic-wind.
         (close-port outp)))))
