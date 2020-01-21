@@ -5,6 +5,26 @@
  (srfi :64 testing)
  (pea vfs))     ; module under test
 
+(test-begin "vfs")
+
+(define plfile "vfs-pl-test.m3u")
+
+(guard (x [else #f])
+  (delete-file plfile))
+
+(call-with-output-file
+  plfile
+  (lambda (p)
+    (display "file1.mp3" p)(newline p)
+    (display "file2.mp4" p)(newline p)))
+(define v (vfs-make plfile))
+
+(test-equal "initial vfs" '("/") (vector->list (vfs-vpaths v)))
+
+(delete-file plfile)
+
+(test-end "vfs")
+
 (test-begin "vfs-state")
 
 (define key1 "/key1")
