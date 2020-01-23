@@ -16,15 +16,17 @@
 
   (define-record-type vfs
     (fields
-      playlists         ; vpath => playlist hashtable.
+      playlists         ; vpath => playlist record.
       vcwd              ; virtual path cwd.
       ))
 
-  ;; [proc] vfs-make: create and initialise vfs with root playlist-path.
+  ;;;; vfs-pl: vfs playlist storage.
+
+  ;; [proc] vfs-make: create and initialise vfs with root playlist path.
   (define vfs-make
-    (lambda (playlist-path)
+    (lambda (path)
       (let ([v (make-vfs (make-hashtable string-hash string-ci=?) "/")])
-        (vfs-add! v playlist-path "/")
+        (vfs-add! v path "/")
         v)))
 
   ;; [proc] vfs-vpaths: return vector of stored playlist vpaths.
@@ -32,11 +34,13 @@
     (lambda (vfs)
       (hashtable-keys (vfs-playlists vfs))))
 
-  ;; [proc] vfs-add!: load contents at playlist-path and store at vpath.
+  ;; [proc] vfs-add!: load playlist contents at path and store at vpath.
   ;; Acts as a refresh if vpath is already loaded.
   (define vfs-add!
-    (lambda (vfs playlist-path vpath)
-      (hashtable-set! (vfs-playlists vfs) vpath (playlist-read playlist-path))))
+    (lambda (vfs path vpath)
+      (unless (hashtable-contains? (vfs-playlists vfs) vpath)
+        (hashtable-set! (vfs-playlists vfs) vpath (playlist-make path)))
+      (playlist-read (hashtable-ref (vfs-playlists vfs) vpath #f))))
 
   ;; [proc] vfs-refresh!: reload playlist contents at vpath.
   (define vfs-refresh!

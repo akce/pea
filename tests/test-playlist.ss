@@ -21,42 +21,53 @@
     (call-with-output-file
       fn
       (lambda (p)
-        (for-each
+        (vector-for-each
           (lambda (line)
-            (write line p)(newline p))
+            (display line p)(newline p))
           lines)))))
 
 ;;;; Tests.
 
 (test-begin "playlist")
 
-(define m3u-files-only
-  '("file1.mp3"
-    "file2.mp3"))
+(define files-only
+  '#("file1.mp3"
+     "file2.mp3"))
 
 ;; Test that m3u is loaded as a playlist.
-(define pm3u-ext "pl-test-ext.m3u")
-(write-file pm3u-ext m3u-files-only)
+(define pm3u-ext (playlist-make "pl-test-ext.m3u"))
+(test-assert "m3u ext is playlist" (playlist? pm3u-ext))
+(test-eq "new m3u ext is empty" '#() (playlist-tracks pm3u-ext))
 
-(define p (playlist-read pm3u-ext))
-(test-assert "m3u ext is playlist" (playlist? p))
+(write-file (playlist-path pm3u-ext) files-only)
+(playlist-read pm3u-ext)
+(test-equal "loaded m3u ext track paths" files-only (vector-map track-path (playlist-tracks pm3u-ext)))
+(test-equal "loaded m3u ext track titles" '#(#f #f) (vector-map track-title (playlist-tracks pm3u-ext)))
 
 ;; Test that m3u8 is loaded as a playlist.
-(define pm3u8-ext "pl-test-ext.m3u8")
-(write-file pm3u8-ext m3u-files-only)
-(set! p (playlist-read pm3u8-ext))
-(test-assert "m3u ext is playlist" (playlist? p))
+(define pm3u8-ext (playlist-make "pl-test-ext.m3u8"))
+(test-assert "m3u8 ext is playlist" (playlist? pm3u8-ext))
 
-(define ppls-ext "pl-test.pls")
-(define pls-simple
-  '("[playlist]"
-    "Version=2"
-    "NumberOfFiles=1"
-    "File1=file1.mp3"
-    "Title1=File 1"))
+(write-file (playlist-path pm3u8-ext) files-only)
+(playlist-read pm3u8-ext)
+(test-equal "loaded m3u8 ext track paths" files-only (vector-map track-path (playlist-tracks pm3u8-ext)))
+(test-equal "loaded m3u8 ext track titles" '#(#f #f) (vector-map track-title (playlist-tracks pm3u8-ext)))
 
-(write-file ppls-ext pls-simple)
-(set! p (playlist-read ppls-ext))
-(test-assert "pls ext is playlist" (playlist? p))
+(define ppls-ext (playlist-make "pl-test.pls"))
+(test-assert "pls ext is playlist" (playlist? ppls-ext))
+
+(define pls-files-only
+  '#("[playlist]"
+     "Version=2"
+     "NumberOfFiles=2"
+     "File1=file1.mp3"
+     "File2=file2.mp3"))
+
+(write-file (playlist-path ppls-ext) pls-files-only)
+(test-assert "pls ext is playlist" (playlist? ppls-ext))
+(test-eq "new pls ext is empty" '#() (playlist-tracks ppls-ext))
+(playlist-read ppls-ext)
+(test-equal "loaded pls ext track paths" files-only (vector-map track-path (playlist-tracks ppls-ext)))
+(test-equal "loaded pls ext track titles" '#(#f #f) (vector-map track-title (playlist-tracks ppls-ext)))
 
 (test-end "playlist")

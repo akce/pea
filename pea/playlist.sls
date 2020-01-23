@@ -10,17 +10,9 @@
 (library
   (pea playlist)
   (export
-    ;; Hide the underlying playlist type as this is very likely to change, probably to a custom record type.
-    (rename
-      (vector? playlist?)
-      (vector-for-each playlist-for-each)
-      (vector-length playlist-length)
-      (vector-map playlist-map)
-      (vector-ref playlist-ref)
-      (vector-set! playlist-set!))
-
     track? track-path track-title
 
+    playlist? playlist-make playlist-path playlist-tracks
     ;; general factory func.
     playlist-read
     ;; .m3u .m3u8 files.
@@ -36,20 +28,29 @@
   (define-record-type track
     (fields path title))
 
+  (define-record-type playlist
+    (fields path (mutable tracks)))
+
+  (define playlist-make
+    (lambda (path)
+      (make-playlist path '#())))
+
   ;; [proc] playlist-read: reads known playlist types and returns contained tracks.
   ;; An empty playlist is returned for unknown playlist file types.
   (define playlist-read
-    (lambda (path)
-      (let ([ext (path-extension path)])
-        (cond
-          [(or
-             (string-ci=? "m3u" ext)
-             (string-ci=? "m3u8" ext))
-           (m3u-read path)]
-          [(string-ci=? "pls" ext)
-           (pls-read path)]
-          [else
-            '#()]))))
+    (lambda (pl)
+      (let* ([path (playlist-path pl)]
+             [ext (path-extension path)])
+        (playlist-tracks-set! pl
+          (cond
+            [(or
+               (string-ci=? "m3u" ext)
+               (string-ci=? "m3u8" ext))
+             (m3u-read path)]
+            [(string-ci=? "pls" ext)
+             (pls-read path)]
+            [else
+              '#()])))))
 
   ;;;; Filetype: M3U M3U8 */*mpegurl
   ;; For further detail:
