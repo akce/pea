@@ -3,8 +3,11 @@
 (library
   (pea path)
   (export
-    make-uri uri-url? uri-path
-    uri-absolute? uri-media-type)
+    make-uri uri-url? uri->string uri-path
+    uri-absolute?
+    uri-media-type uri-build-path
+    string-join
+    )
   (import
     (rnrs)
     (irregex)
@@ -26,6 +29,8 @@
 
   ;; [proc] make-uri: parse the uri string into a uri object.
   ;; A uri object is just an irregex-match object.
+  ;; TODO truncate consecutive '/' chars in paths?
+  ;; TODO strip trailing '/' chars in authority and paths?
   (define make-uri
     (lambda (str)
       (irregex-search uri-pattern str)))
@@ -35,6 +40,18 @@
   (define uri-url?
     (lambda (uri)
       (irregex-match-substring uri 'scheme)))
+
+  ;; [proc] uri->string: return the string representation of uri.
+  ;; Note that the string returned is not the one used to create the uri.
+  ;; ie,
+  ;; > (define s "https://localhost.localnet/home/dir")
+  ;; > (eq? s (uri->string (make-uri s)))
+  ;; #f
+  ;; > (string=? s (uri->string (make-uri s)))
+  ;; #t
+  (define uri->string
+    (lambda (uri)
+      (irregex-match-substring uri 0)))
 
   ;; [proc] uri-path: Path contained in uri.
   (define uri-path
@@ -71,4 +88,46 @@
                  'LIST]
                 [else
                   #f]))]))))
+
+  ;; [proc] uri-build-path: builds a real path based on a list of URIs.
+  ;; [return] string representing the URI.
+  ;; Used to build a real path when traversing playlists.
+  ;; An absolute path resets the return path, relative paths are appended.
+  ;;
+  ;; TODO return a uri object?
+  (define uri-build-path
+    (lambda (uris)
+      (define (get-parts us parts)
+        (cond
+          [(null? us)
+           (reverse parts)]
+          [else
+            (let ([u (car us)])
+              (get-parts (cdr us)
+                         (if (uri-absolute? u)
+                             (list u)
+                             (cons u parts))))]))
+      (apply string-join "/" (map uri->string (get-parts uris '())))))
+
+  ;; [proc] string-join: join all string parts together using separator.
+  ;;
+  ;; Note that the signature to this version of string-join differs to that found in SRFI-13.
+  ;; The separator is the first arg and therefore always explicit which allows for the string
+  ;; parts as regular arguments, rather than a list of strings.
+  ;;
+  ;; Naive implementation that uses (potentially) multiple calls to string-append.
+  ;; TODO move this into a util lib?
+  ;; TODO use alternate name to differentiate from SRFI-13?
+  (define string-join
+    (lambda (sep . str-parts)
+      (cond
+        [(null? str-parts)
+         ""]
+        [else
+          (let loop ([acc (car str-parts)] [rest (cdr str-parts)])
+            (cond
+              [(null? rest)
+               acc]
+              [else
+                (loop (string-append acc sep (car rest)) (cdr rest))]))])))
   )

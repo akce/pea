@@ -48,4 +48,23 @@
                         ;; NOTE for now that also includes URLs to video files!
                         "http://127.0.0.1:80/a.mkv"))))
 
+;;; Real path construction tests.
+(test-equal "single relative path" "a" (uri-build-path (map make-uri '("a"))))
+(test-equal "single absolute dir" "/a" (uri-build-path (map make-uri '("/a"))))
+(test-equal "single absolute url" "file:///" (uri-build-path (map make-uri '("file:///"))))
+(test-equal "a + /b" "/b" (uri-build-path (map make-uri '("a" "/b"))))
+(test-equal "a + http://localhost/" "http://localhost/" (uri-build-path (map make-uri '("a" "http://localhost/"))))
+(test-equal "/b + a" "/b/a" (uri-build-path (map make-uri '("/b" "a"))))
+(test-skip "/b/ + a" "/b/a" (uri-build-path (map make-uri '("/b/" "a"))))
+(test-equal "http://localhost + a" "http://localhost/a" (uri-build-path (map make-uri '("http://localhost" "a"))))
+(test-skip "http://localhost/ + a" "http://localhost/a" (uri-build-path (map make-uri '("http://localhost/" "a"))))
+(test-equal "a + /b + c" "/b/c" (uri-build-path (map make-uri '("a" "/b" "c"))))
+(test-equal "a + http://localhost + c" "http://localhost/c" (uri-build-path (map make-uri '("a" "http://localhost" "c"))))
+
+;;; Util: string-join tests.
+(test-equal "string-join null" "" (string-join "/"))
+(test-equal "string-join one" "a" (string-join "/" "a"))
+(test-equal "string-join two" "a/b" (string-join "/" "a" "b"))
+(test-equal "string-join three" "a/b/c" (string-join "/" "a" "b" "c"))
+
 (test-end "path")
