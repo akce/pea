@@ -1,14 +1,14 @@
 ;; PEA path handling.
-;;
+;; This includes guessing media type based on filename/url.
 (library
   (pea path)
   (export
     make-uri uri-url? uri-path
-    uri-absolute?)
+    uri-absolute? uri-media-type)
   (import
     (rnrs)
     (irregex)
-    (only (chezscheme) path-absolute?))
+    (only (chezscheme) path-absolute? path-extension))
 
   ;; URI irregex pattern derived from that defined in RFC3986:
   ;; https://tools.ietf.org/html/rfc3986#page-50
@@ -48,4 +48,27 @@
       (or
         (uri-url? uri)
         (path-absolute? (irregex-match-substring uri 'path)))))
+
+  ;; [proc] uri-media-type: guess general media type based on uri info.
+  ;; [return]: AUDIO VIDEO LIST or #f.
+  (define uri-media-type
+    (let ([audio-hashes (map string-hash '("mp3" "flac" "aac" "wv" "wav" "ogg"))]
+          [video-hashes (map string-hash '("mp4" "mkv" "avi" "m4v"))]
+          [list-hashes (map string-hash '("" "m3u" "m3u8" "pls"))])
+      (lambda (uri)
+        (cond
+          ;; For now, assume that all URLs are internet radio stations.
+          [(uri-url? uri)
+           'AUDIO]
+          [else
+            (let ([ext (string-hash (path-extension (uri-path uri)))])
+              (cond
+                [(memq ext audio-hashes)
+                 'AUDIO]
+                [(memq ext video-hashes)
+                 'VIDEO]
+                [(memq ext list-hashes)
+                 'LIST]
+                [else
+                  #f]))]))))
   )
