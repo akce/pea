@@ -10,9 +10,10 @@
 (library
   (pea playlist)
   (export
-    track? track-path track-title
+    track? track-uri track-title track-type
 
     playlist? playlist-make playlist-path playlist-tracks
+    track-ref
     ;; general factory func.
     playlist-read
     ;; .m3u .m3u8 files.
@@ -21,15 +22,31 @@
     pls-read)
   (import
     (rnrs)
+    (pea path)
     (irregex)
-    (only (chezscheme) path-extension))
+    (only (chezscheme) path-extension path-last path-root))
 
   ;; Simple track record.
   (define-record-type track
-    (fields path title))
+    (fields
+      uri
+      title
+      type
+      )
+    (protocol
+      (lambda (new)
+        (lambda (path title)
+          (let ([uri (make-uri path)])
+            (new uri
+                 ;; Set the title to last part of the path if title isn't given.
+                 (if title title (path-root (path-last path)))
+                 (uri-media-type uri)))))))
 
   (define-record-type playlist
-    (fields path (mutable tracks)))
+    (fields
+      path
+      [mutable tracks]
+      ))
 
   (define playlist-make
     (lambda (path)
@@ -51,6 +68,11 @@
              (pls-read path)]
             [else
               '#()])))))
+
+  ;; [proc] track-ref: shorthand for obtaining the playlist track at index.
+  (define track-ref
+    (lambda (pl index)
+      (vector-ref (playlist-tracks pl) index)))
 
   ;;;; Filetype: M3U M3U8 */*mpegurl
   ;; For further detail:

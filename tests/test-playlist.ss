@@ -3,6 +3,7 @@
 (import
  (rnrs)
  (srfi :64 testing)
+ (pea path)
  (pea playlist))     ; module under test
 
 ;;;; utils.
@@ -26,7 +27,7 @@
             (display line p)(newline p))
           lines)))))
 
-;;;; Tests.
+;;;; Format tests.
 
 (test-begin "playlist")
 
@@ -39,10 +40,21 @@
 (test-assert "m3u ext is playlist" (playlist? pm3u-ext))
 (test-eq "new m3u ext is empty" '#() (playlist-tracks pm3u-ext))
 
+;; Some map helper functions.
+(define track-path
+  (lambda (t)
+    (uri->string (track-uri t))))
+
+(define playlist-track-title
+  (lambda (pl index)
+    (track-title (track-ref pl index))))
+
 (write-file (playlist-path pm3u-ext) files-only)
 (playlist-read pm3u-ext)
 (test-equal "loaded m3u ext track paths" files-only (vector-map track-path (playlist-tracks pm3u-ext)))
-(test-equal "loaded m3u ext track titles" '#(#f #f) (vector-map track-title (playlist-tracks pm3u-ext)))
+(test-equal "loaded m3u ext track titles" '#("file1" "file2") (vector-map track-title (playlist-tracks pm3u-ext)))
+(test-equal "m3u empty track title index 0" "file1" (playlist-track-title pm3u-ext 0))
+(test-equal "m3u empty track title index 1" "file2" (playlist-track-title pm3u-ext 1))
 
 ;; Test that m3u8 is loaded as a playlist.
 (define pm3u8-ext (playlist-make "pl-test-ext.m3u8"))
@@ -51,7 +63,7 @@
 (write-file (playlist-path pm3u8-ext) files-only)
 (playlist-read pm3u8-ext)
 (test-equal "loaded m3u8 ext track paths" files-only (vector-map track-path (playlist-tracks pm3u8-ext)))
-(test-equal "loaded m3u8 ext track titles" '#(#f #f) (vector-map track-title (playlist-tracks pm3u8-ext)))
+(test-equal "loaded m3u8 ext track titles" '#("file1" "file2") (vector-map track-title (playlist-tracks pm3u8-ext)))
 
 (define ppls-ext (playlist-make "pl-test.pls"))
 (test-assert "pls ext is playlist" (playlist? ppls-ext))
@@ -68,6 +80,30 @@
 (test-eq "new pls ext is empty" '#() (playlist-tracks ppls-ext))
 (playlist-read ppls-ext)
 (test-equal "loaded pls ext track paths" files-only (vector-map track-path (playlist-tracks ppls-ext)))
-(test-equal "loaded pls ext track titles" '#(#f #f) (vector-map track-title (playlist-tracks ppls-ext)))
+(test-equal "loaded pls ext track titles" '#("file1" "file2") (vector-map track-title (playlist-tracks ppls-ext)))
+(test-equal "pls empty track title index 0" "file1" (playlist-track-title ppls-ext 0))
+(test-equal "pls empty track title index 1" "file2" (playlist-track-title ppls-ext 1))
+
+;;;; Generic playlist tests.
+;; Using m3u as the base.
+
+(define root-m3u-content
+  '#("#EXTINF:-1,Url path test"
+     "http://home-pi.localnet/list.m3u"
+     "#EXTINF:,Absolute root path"
+     "/home/pea/media"
+     "#EXTINF:,Absolute root mp3 file"
+     "/home/pea/media/file 1.mp3"
+     ;; TODO relative path from root playlist
+     ))
+
+(define pl-root (playlist-make "test-root.m3u"))
+(write-file (playlist-path pl-root) root-m3u-content)
+(playlist-read pl-root)
+
+(test-assert "track? and track-ref" (track? (track-ref pl-root 0)))
+(test-equal "track http://m3u is audio" 'AUDIO (track-type (track-ref pl-root 0)))
+(test-equal "track dir is list" 'LIST (track-type (track-ref pl-root 1)))
+(test-equal "track type is audio" 'AUDIO (track-type (track-ref pl-root 2)))
 
 (test-end "playlist")
