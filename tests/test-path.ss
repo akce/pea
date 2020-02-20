@@ -29,6 +29,12 @@
 (test-equal "abs path" "/home/user/media/filename.mp4" (uri-path abs-path))
 (test-assert "abs absolute?" (uri-absolute? abs-path))
 
+;; strip file tests.
+(test-equal "file scheme with file"
+            "file:///home" (uri->string (uri-strip-file (make-uri "file:///home/file.mp3"))))
+(test-equal "no scheme with file"
+            "/home/blah/exy" (uri->string (uri-strip-file (make-uri "/home/blah/exy/playl.m3u"))))
+
 ;;; Media types tests.
 (define media-list '("a.mp3" "a.flac" "a.aac" "a.wv" "a.wav" "a.ogg"
                      "a.mp4" "a.mkv" "a.avi" "a.m4v"

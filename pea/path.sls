@@ -5,13 +5,13 @@
   (export
     make-uri uri? uri->string uri-scheme uri-authority uri-path uri-query uri-fragment
     uri-url? uri-absolute?
-    uri-media-type uri-build-path
+    uri-strip-file uri-media-type uri-build-path
     )
   (import
     (rnrs)
     (pea util)
     (irregex)
-    (only (chezscheme) path-absolute? path-extension))
+    (only (chezscheme) path-absolute? path-extension path-parent))
 
   ;; URI irregex pattern derived from that defined in RFC3986:
   ;; https://tools.ietf.org/html/rfc3986#page-50
@@ -44,18 +44,29 @@
       fragment)
     (protocol
       (lambda (new)
-        ;; [proc] make-uri: parse the uri string into a uri object.
-        (lambda (str)
-          ;; TODO truncate consecutive '/' chars in paths?
-          ;; TODO strip trailing '/' chars in authority and paths?
-          (let ([m (irregex-search uri-pattern str)])
-            (new
-              str
-              (irregex-match-substring m 'scheme)
-              (irregex-match-substring m 'authority)
-              (irregex-match-substring m 'path)
-              (irregex-match-substring m 'query)
-              (irregex-match-substring m 'fragment)))))))
+        (case-lambda
+          ;; [proc] make-uri uri-string: parse the uri string into a uri object.
+          [(str)
+           ;; TODO truncate consecutive '/' chars in paths?
+           ;; TODO strip trailing '/' chars in authority and paths?
+           (let ([m (irregex-search uri-pattern str)])
+             (new
+               str
+               (irregex-match-substring m 'scheme)
+               (irregex-match-substring m 'authority)
+               (irregex-match-substring m 'path)
+               (irregex-match-substring m 'query)
+               (irregex-match-substring m 'fragment)))]
+          ;; [proc] make-uri scheme auth path query fragment: create uri based on component parts.
+          [(scheme authority path query fragment)
+           (new (string-append
+                  ;; recreate uri string. ie, uri-pattern in reverse.
+                  (if scheme (string-append scheme ":") "")
+                  (if authority (string-append "//" authority) "")
+                  (if path path "")
+                  (if query (string-append "?" query) "")
+                  (if fragment (string-append "#" fragment) ""))
+                scheme authority path query fragment)]))))
 
   ;; [proc] uri-url?: Does the uri object refer to a url?
   ;; Assumes that it's a URL if it has a scheme.
@@ -70,6 +81,19 @@
       (or
         (uri-url? uri)
         (path-absolute? (uri-path uri)))))
+
+  ;; [proc] uri-strip-file: remove component from uri path.
+  ;; [return] new uri if path was changed, original uri object if unchanged.
+  (define uri-strip-file
+    (lambda (uri)
+      (if (uri-path uri)
+          (make-uri
+            (uri-scheme uri)
+            (uri-authority uri)
+            (path-parent (uri-path uri))
+            (uri-query uri)
+            (uri-fragment uri))
+          uri)))
 
   ;; [proc] uri-media-type: guess general media type based on uri info.
   ;; [return]: AUDIO VIDEO LIST or #f.
