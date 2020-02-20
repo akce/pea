@@ -4,68 +4,82 @@
 (library
   (pea vfs)
   (export
-    vfs-make vfs? vfs-playlists vfs-vcwd
-    vfs-vpaths vfs-add!
+    make-vfs vfs? vfs-playlist
+    vfs-enter! vfs-pop! vfs-root!
+    vfs-path vfs-vpath
     (rename
       (hashtable? vfs-state?)
       (hashtable-keys vfs-state-vpaths))
     vfs-state-make vfs-state-set! vfs-state-get-track-index vfs-state-get-track-label vfs-state-read vfs-state-save)
   (import
     (rnrs)
-    (pea playlist))
+    (pea path)
+    (pea playlist)
+    (pea util))
+
+  (define sep "/")
 
   (define-record-type vfs
     (fields
-      playlists         ; vpath => playlist record.
-      vcwd              ; virtual path cwd.
-      ))
+      [mutable	crumbs]		; list of tracks leading to current playlist.
+				; NB: crumbs are stored as a LIFO stack. eg, crumbs[0] is the current track.
+				; NB: this makes it very easy to push and pop playlists.
+      [mutable	playlist]	; cache of current playlist. TODO may not be needed.
+      )
+    (protocol
+      (lambda (new)
+        ;; create and initialise vfs with root playlist path.
+        (lambda (root-playlist-path)
+          (let ([pl (make-playlist root-playlist-path)])
+            (playlist-read pl)
+            (new (list (make-track root-playlist-path sep)) pl))))))
 
   ;;;; vfs-pl: vfs playlist storage.
 
-  ;; [proc] vfs-make: create and initialise vfs with root playlist path.
-  (define vfs-make
-    (lambda (path)
-      (let ([v (make-vfs (make-hashtable string-hash string-ci=?) "/")])
-        (vfs-add! v path "/")
-        v)))
-
-  ;; [proc] vfs-vpaths: return vector of stored playlist vpaths.
-  (define vfs-vpaths
+  (define vfs-vpath
     (lambda (vfs)
-      (hashtable-keys (vfs-playlists vfs))))
+      (reverse-map track-title (vfs-crumbs vfs))))
 
-  ;; [proc] vfs-add!: load playlist contents at path and store at vpath.
-  ;; Acts as a refresh if vpath is already loaded.
-  (define vfs-add!
-    (lambda (vfs path vpath)
-      (unless (hashtable-contains? (vfs-playlists vfs) vpath)
-        (hashtable-set! (vfs-playlists vfs) vpath (playlist-make path)))
-      (playlist-read (hashtable-ref (vfs-playlists vfs) vpath #f))))
+  (define vfs-path
+    (lambda (vfs)
+      (uri-build-path (reverse-map track-uri (vfs-crumbs vfs)))))
 
-  ;; [proc] vfs-refresh!: reload playlist contents at vpath.
-  (define vfs-refresh!
-    (lambda (vfs vpath)
-      #f))
+  ;; [proc] vfs-enter!: sets the track at index as current.
+  ;; [return]: vpath for the new current playlist. #f on failure.
+  ;; NOTE: The track must be of type LIST.
+  (define vfs-enter!
+    (lambda (vfs index)
+      (let* ([parent-pl (vfs-playlist vfs)]
+             [t (track-ref parent-pl index)])
+        (cond
+          [(and t (eq? (track-type t) 'LIST))
+            ;;;; Enter the list.
+            (vfs-rebuild! vfs (cons t (vfs-crumbs vfs)))]
+          [else
+            ;; Index doesn't exist or track is not a LIST item.
+            #f]))))
 
-  ;; [proc] vfs-display-list: list of display labels for vfs contents at vpath.
-  (define vfs-display-list
-    (lambda (vfs vpath)
-      '()))
+  ;; [proc] vfs-pop!: back to parent playlist.
+  (define vfs-pop!
+    (lambda (vfs)
+      (let ([tail (cdr (vfs-crumbs vfs))])
+        (cond
+          [(null? tail)		; don't remove the root crumb.
+           #f]
+          [else
+            (vfs-rebuild! vfs tail)]))))
 
-  ;; [proc] vfs-path-list: list of real world paths for contents at vpath.
-  (define vfs-path-list
-    (lambda (vfs vpath)
-      '()))
+  ;; [proc] vfs-root!: back to root playlist.
+  (define vfs-root!
+    (lambda (vfs)
+      (vfs-rebuild! vfs (list (car (reverse (vfs-crumbs vfs)))))))
 
-  ;; [proc] vfs-track-path: real world path for vfs track at vpath.
-  (define vfs-track-path
-    (lambda (vfs vpath track-index)
-      #f))
-
-  ;; [proc] vfs-load!: internally load playlist referenced by vpath.
-  (define vfs-load!
-    (lambda (vfs vpath)
-      #f))
+  ;; [proc] vfs-rebuild!: rebuild playlist using new set of crumbs.
+  (define vfs-rebuild!
+    (lambda (vfs crumbs)
+      (vfs-crumbs-set! vfs crumbs)
+      (vfs-playlist-set! vfs (make-playlist (vfs-path vfs)))
+      (playlist-read (vfs-playlist vfs))))
 
   ;;;; vfs-state
   ;; The vfs-state object is a very thin wrapper around a hashtable.

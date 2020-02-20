@@ -6,10 +6,10 @@
     make-uri uri-url? uri->string uri-path
     uri-absolute?
     uri-media-type uri-build-path
-    string-join
     )
   (import
     (rnrs)
+    (pea util)
     (irregex)
     (only (chezscheme) path-absolute? path-extension))
 
@@ -71,7 +71,8 @@
   (define uri-media-type
     (let ([audio-hashes (map string-hash '("mp3" "flac" "aac" "wv" "wav" "ogg"))]
           [video-hashes (map string-hash '("mp4" "mkv" "avi" "m4v"))]
-          [list-hashes (map string-hash '("" "m3u" "m3u8" "pls"))])
+          [list-hashes (map string-hash '("m3u" "m3u8" "pls"))]
+          [dir-hash (string-hash "")])
       (lambda (uri)
         (cond
           ;; For now, assume that all URLs are internet radio stations.
@@ -86,6 +87,8 @@
                  'VIDEO]
                 [(memq ext list-hashes)
                  'LIST]
+                [(eq? ext dir-hash)
+                 'DIR]
                 [else
                   #f]))]))))
 
@@ -108,26 +111,4 @@
                              (list u)
                              (cons u parts))))]))
       (apply string-join "/" (map uri->string (get-parts uris '())))))
-
-  ;; [proc] string-join: join all string parts together using separator.
-  ;;
-  ;; Note that the signature to this version of string-join differs to that found in SRFI-13.
-  ;; The separator is the first arg and therefore always explicit which allows for the string
-  ;; parts as regular arguments, rather than a list of strings.
-  ;;
-  ;; Naive implementation that uses (potentially) multiple calls to string-append.
-  ;; TODO move this into a util lib?
-  ;; TODO use alternate name to differentiate from SRFI-13?
-  (define string-join
-    (lambda (sep . str-parts)
-      (cond
-        [(null? str-parts)
-         ""]
-        [else
-          (let loop ([acc (car str-parts)] [rest (cdr str-parts)])
-            (cond
-              [(null? rest)
-               acc]
-              [else
-                (loop (string-append acc sep (car rest)) (cdr rest))]))])))
   )

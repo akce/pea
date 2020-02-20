@@ -10,10 +10,12 @@
 (library
   (pea playlist)
   (export
-    track? track-uri track-title track-type
+    make-track track? track-uri track-title track-type
 
     make-playlist playlist? playlist-path playlist-tracks
     track-ref
+
+    playlist-map
     ;; general factory func.
     playlist-read
     ;; .m3u .m3u8 files.
@@ -21,8 +23,9 @@
     ;; .pls files.
     pls-read)
   (import
-    (rnrs)
+    (rename (rnrs) (vector-map playlist-map))
     (pea path)
+    (pea util)
     (irregex)
     (only (chezscheme) path-extension path-last path-root))
 
@@ -149,7 +152,7 @@
                                            (hashtable-set! titles (car x) (cdr x)))]))
           lines)
         ;; Build and return track listing. Use files for keys as they're mandatory in pls files.
-        (vector-map
+        (playlist-map
           (lambda (key)
             (make-track
               (hashtable-ref files key #f)
@@ -202,30 +205,4 @@
                   (if (string=? "" stripped)
                       acc
                       (cons stripped acc))))]))))
-
-  ;; [proc] slurp: Read all lines from a text file.
-  ;; Name is akin to the perl function.
-  ;; All lines of a file are returned as a list with newlines removed.
-  (define slurp
-    (lambda (path)
-      (let ([f (open-file-input-port
-                 path
-                 (file-options no-create)
-                 (buffer-mode line)
-                 (make-transcoder (utf-8-codec)))])
-        (let loop ([line (get-line f)] [lines '()])
-          (cond
-            [(eof-object? line)
-             (close-input-port f)
-             (reverse lines)]
-            [else
-              (loop (get-line f) (cons line lines))])))))
-
-  ;; [proc] string-trim-both: kind of the same as that found in (srfi :152 strings)
-  ;; Defined using irregex and only supports whitespace trimming.
-  (define string-trim-both
-    (let ([p (irregex '(w/nocase (* space ) (submatch (* nonl)) (* space)))])
-      (lambda (line)
-        (irregex-match-substring (irregex-search p line) 1))))
   )
-

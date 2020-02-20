@@ -37,7 +37,7 @@
 (define uri-list (map make-uri media-list))
 (test-equal "media types" '(AUDIO AUDIO AUDIO AUDIO AUDIO AUDIO
                                   VIDEO VIDEO VIDEO VIDEO
-                                  LIST LIST LIST LIST
+                                  DIR LIST LIST LIST
                                   #f #f #f)
             (map uri-media-type uri-list))
 
@@ -60,11 +60,5 @@
 (test-skip "http://localhost/ + a" "http://localhost/a" (uri-build-path (map make-uri '("http://localhost/" "a"))))
 (test-equal "a + /b + c" "/b/c" (uri-build-path (map make-uri '("a" "/b" "c"))))
 (test-equal "a + http://localhost + c" "http://localhost/c" (uri-build-path (map make-uri '("a" "http://localhost" "c"))))
-
-;;; Util: string-join tests.
-(test-equal "string-join null" "" (string-join "/"))
-(test-equal "string-join one" "a" (string-join "/" "a"))
-(test-equal "string-join two" "a/b" (string-join "/" "a" "b"))
-(test-equal "string-join three" "a/b/c" (string-join "/" "a" "b" "c"))
 
 (test-end "path")
