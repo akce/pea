@@ -3,8 +3,8 @@
 (library
   (pea path)
   (export
-    make-uri uri-url? uri->string uri-path
-    uri-absolute?
+    make-uri uri? uri->string uri-scheme uri-authority uri-path uri-query uri-fragment
+    uri-url? uri-absolute?
     uri-media-type uri-build-path
     )
   (import
@@ -27,36 +27,41 @@
          (? "#" (submatch-named fragment (* nonl)))                     ; 9 = fragment
          )))
 
-  ;; [proc] make-uri: parse the uri string into a uri object.
-  ;; A uri object is just an irregex-match object.
-  ;; TODO truncate consecutive '/' chars in paths?
-  ;; TODO strip trailing '/' chars in authority and paths?
-  (define make-uri
-    (lambda (str)
-      (irregex-search uri-pattern str)))
+  (define-record-type uri
+    (fields
+      ;; [proc] uri->string: return the string representation of uri.
+      ;; Note that the string returned is the one used to create the uri.
+      ;; ie,
+      ;; > (define s "https://localhost.localnet/home/dir")
+      ;; > (eq? s (uri->string (make-uri s)))
+      ;; #t
+      [immutable string uri->string]
+      ;; The following fields are as per the uri-pattern.
+      scheme
+      authority
+      path
+      query
+      fragment)
+    (protocol
+      (lambda (new)
+        ;; [proc] make-uri: parse the uri string into a uri object.
+        (lambda (str)
+          ;; TODO truncate consecutive '/' chars in paths?
+          ;; TODO strip trailing '/' chars in authority and paths?
+          (let ([m (irregex-search uri-pattern str)])
+            (new
+              str
+              (irregex-match-substring m 'scheme)
+              (irregex-match-substring m 'authority)
+              (irregex-match-substring m 'path)
+              (irregex-match-substring m 'query)
+              (irregex-match-substring m 'fragment)))))))
 
   ;; [proc] uri-url?: Does the uri object refer to a url?
   ;; Assumes that it's a URL if it has a scheme.
   (define uri-url?
     (lambda (uri)
-      (irregex-match-substring uri 'scheme)))
-
-  ;; [proc] uri->string: return the string representation of uri.
-  ;; Note that the string returned is not the one used to create the uri.
-  ;; ie,
-  ;; > (define s "https://localhost.localnet/home/dir")
-  ;; > (eq? s (uri->string (make-uri s)))
-  ;; #f
-  ;; > (string=? s (uri->string (make-uri s)))
-  ;; #t
-  (define uri->string
-    (lambda (uri)
-      (irregex-match-substring uri 0)))
-
-  ;; [proc] uri-path: Path contained in uri.
-  (define uri-path
-    (lambda (uri)
-      (irregex-match-substring uri 'path)))
+      (uri-scheme uri)))
 
   ;; [proc] uri-absolute?: Does the uri refer to an absolute path or a relative one?
   ;; Relative paths may be joined to build larger paths, whereas absolute must begin a path, or solely be the path.
@@ -64,7 +69,7 @@
     (lambda (uri)
       (or
         (uri-url? uri)
-        (path-absolute? (irregex-match-substring uri 'path)))))
+        (path-absolute? (uri-path uri)))))
 
   ;; [proc] uri-media-type: guess general media type based on uri info.
   ;; [return]: AUDIO VIDEO LIST or #f.

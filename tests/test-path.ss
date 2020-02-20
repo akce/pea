@@ -13,11 +13,11 @@
 
 (test-assert "rfc url" (uri-url? rfc-uri))
 
-(test-equal "rfc scheme" "http" (irregex-match-substring rfc-uri 'scheme))
-(test-equal "rfc auth" "www.ics.uci.edu" (irregex-match-substring rfc-uri 'authority))
+(test-equal "rfc scheme" "http" (uri-scheme rfc-uri))
+(test-equal "rfc auth" "www.ics.uci.edu" (uri-authority rfc-uri))
 (test-equal "rfc path" "/pub/ietf/uri/" (uri-path rfc-uri))
-(test-equal "rfc query" #f (irregex-match-substring rfc-uri 'query))
-(test-equal "rfc fragment" "Related" (irregex-match-substring rfc-uri 'fragment))
+(test-equal "rfc query" #f (uri-query rfc-uri))
+(test-equal "rfc fragment" "Related" (uri-fragment rfc-uri))
 
 (define rel-path (make-uri "../dir/filename.mp3"))
 (test-equal "rel url" #f (uri-url? rel-path))
