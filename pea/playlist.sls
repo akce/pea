@@ -12,7 +12,7 @@
   (export
     track? track-uri track-title track-type
 
-    playlist? playlist-make playlist-path playlist-tracks
+    make-playlist playlist? playlist-path playlist-tracks
     track-ref
     ;; general factory func.
     playlist-read
@@ -46,11 +46,11 @@
     (fields
       path
       [mutable tracks]
-      ))
-
-  (define playlist-make
-    (lambda (path)
-      (make-playlist path '#())))
+      )
+    (protocol
+      (lambda (new)
+        (lambda (path)
+          (new path '#())))))
 
   ;; [proc] playlist-read: reads known playlist types and returns contained tracks.
   ;; An empty playlist is returned for unknown playlist file types.

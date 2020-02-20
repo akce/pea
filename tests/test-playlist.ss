@@ -36,7 +36,7 @@
      "file2.mp3"))
 
 ;; Test that m3u is loaded as a playlist.
-(define pm3u-ext (playlist-make "pl-test-ext.m3u"))
+(define pm3u-ext (make-playlist "pl-test-ext.m3u"))
 (test-assert "m3u ext is playlist" (playlist? pm3u-ext))
 (test-eq "new m3u ext is empty" '#() (playlist-tracks pm3u-ext))
 
@@ -57,7 +57,7 @@
 (test-equal "m3u empty track title index 1" "file2" (playlist-track-title pm3u-ext 1))
 
 ;; Test that m3u8 is loaded as a playlist.
-(define pm3u8-ext (playlist-make "pl-test-ext.m3u8"))
+(define pm3u8-ext (make-playlist "pl-test-ext.m3u8"))
 (test-assert "m3u8 ext is playlist" (playlist? pm3u8-ext))
 
 (write-file (playlist-path pm3u8-ext) files-only)
@@ -65,7 +65,7 @@
 (test-equal "loaded m3u8 ext track paths" files-only (vector-map track-path (playlist-tracks pm3u8-ext)))
 (test-equal "loaded m3u8 ext track titles" '#("file1" "file2") (vector-map track-title (playlist-tracks pm3u8-ext)))
 
-(define ppls-ext (playlist-make "pl-test.pls"))
+(define ppls-ext (make-playlist "pl-test.pls"))
 (test-assert "pls ext is playlist" (playlist? ppls-ext))
 
 (define pls-files-only
@@ -97,7 +97,7 @@
      ;; TODO relative path from root playlist
      ))
 
-(define pl-root (playlist-make "test-root.m3u"))
+(define pl-root (make-playlist "test-root.m3u"))
 (write-file (playlist-path pl-root) root-m3u-content)
 (playlist-read pl-root)
 
