@@ -18,6 +18,9 @@
     playlist-map
     ;; general factory func.
     playlist-read
+    ;;;; debug exports.
+    ;; directory contents.
+    dir-read
     ;; .m3u .m3u8 files.
     m3u-read
     ;; .pls files.
@@ -27,7 +30,7 @@
     (pea path)
     (pea util)
     (irregex)
-    (only (chezscheme) path-extension path-last path-root))
+    (only (chezscheme) directory-list path-extension path-last path-root))
 
   ;; Simple track record.
   (define-record-type track
@@ -41,7 +44,7 @@
         (lambda (path title)
           (let ([uri (make-uri path)])
             (new uri
-                 ;; Set the title to last part of the path if title isn't given.
+                 ;; Set the title to last part of the path if title isn't given (#f).
                  (if title title (path-root (path-last path)))
                  (uri-media-type uri)))))))
 
@@ -61,6 +64,8 @@
     (lambda (pl)
       (playlist-tracks-set! pl
         (case (track-type (playlist-path pl))
+            [(DIR)
+             (dir-read (uri->string (track-uri (playlist-path pl))))]
             [(M3U)
              (m3u-read (uri->string (track-uri (playlist-path pl))))]
             [(PLS)
@@ -72,6 +77,18 @@
   (define track-ref
     (lambda (pl index)
       (vector-ref (playlist-tracks pl) index)))
+
+  ;; [proc] dir-read: loads only known media types from directory.
+  (define dir-read
+    (lambda (path)
+      (list->vector
+        (filter
+          track-type
+          (map
+            (lambda (entry)
+              (make-track entry #f))
+            ;; TODO make the sort comparison function configurable.
+            (list-sort string-ci<? (directory-list path)))))))
 
   ;;;; Filetype: M3U M3U8 */*mpegurl
   ;; For further detail:

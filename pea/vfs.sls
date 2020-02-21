@@ -84,7 +84,7 @@
       (let* ([parent-pl (vfs-playlist vfs)]
              [t (track-ref parent-pl index)])
         (case (track-type t)
-          [(M3U PLS)
+          [(DIR M3U PLS)
             ;;;; Enter the list.
             (vfs-rebuild! vfs (cons t (vfs-crumbs vfs)))]
           [else
