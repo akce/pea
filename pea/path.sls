@@ -96,11 +96,15 @@
           uri)))
 
   ;; [proc] uri-media-type: guess general media type based on uri info.
-  ;; [return]: AUDIO VIDEO LIST or #f.
+  ;; [return]: AUDIO VIDEO M3U PLS DIR or #f.
+  ;;
+  ;; Every type of file that PEA handles gets its own category here.
+  ;; This will be the one place where file types are defined.
   (define uri-media-type
     (let ([audio-hashes (map string-hash '("mp3" "flac" "aac" "wv" "wav" "ogg"))]
           [video-hashes (map string-hash '("mp4" "mkv" "avi" "m4v"))]
-          [list-hashes (map string-hash '("m3u" "m3u8" "pls"))]
+          [m3u-hashes (map string-hash '("m3u" "m3u8"))]
+          [pls-hash (string-hash "pls")]
           [dir-hash (string-hash "")])
       (lambda (uri)
         (cond
@@ -114,8 +118,10 @@
                  'AUDIO]
                 [(memq ext video-hashes)
                  'VIDEO]
-                [(memq ext list-hashes)
-                 'LIST]
+                [(memq ext m3u-hashes)
+                 'M3U]
+                [(eq? ext pls-hash)
+                 'PLS]
                 [(eq? ext dir-hash)
                  'DIR]
                 [else

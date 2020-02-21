@@ -43,7 +43,7 @@
 (define uri-list (map make-uri media-list))
 (test-equal "media types" '(AUDIO AUDIO AUDIO AUDIO AUDIO AUDIO
                                   VIDEO VIDEO VIDEO VIDEO
-                                  DIR LIST LIST LIST
+                                  DIR M3U M3U PLS
                                   #f #f #f)
             (map uri-media-type uri-list))
 

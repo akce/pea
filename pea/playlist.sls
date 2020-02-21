@@ -47,30 +47,26 @@
 
   (define-record-type playlist
     (fields
-      path
+      path		; path contains the track identifying the playlist.
       [mutable tracks]
       )
     (protocol
       (lambda (new)
-        (lambda (path)
-          (new path '#())))))
+        (lambda (track)
+          (new track '#())))))
 
   ;; [proc] playlist-read: reads known playlist types and returns contained tracks.
   ;; An empty playlist is returned for unknown playlist file types.
   (define playlist-read
     (lambda (pl)
-      (let* ([path (playlist-path pl)]
-             [ext (path-extension path)])
-        (playlist-tracks-set! pl
-          (cond
-            [(or
-               (string-ci=? "m3u" ext)
-               (string-ci=? "m3u8" ext))
-             (m3u-read path)]
-            [(string-ci=? "pls" ext)
-             (pls-read path)]
+      (playlist-tracks-set! pl
+        (case (track-type (playlist-path pl))
+            [(M3U)
+             (m3u-read (uri->string (track-uri (playlist-path pl))))]
+            [(PLS)
+             (pls-read (uri->string (track-uri (playlist-path pl))))]
             [else
-              '#()])))))
+              '#()]))))
 
   ;; [proc] track-ref: shorthand for obtaining the playlist track at index.
   (define track-ref

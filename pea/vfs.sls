@@ -32,9 +32,10 @@
       (lambda (new)
         ;; create and initialise vfs with root playlist path.
         (lambda (root-playlist-path)
-          (let ([pl (make-playlist root-playlist-path)])
+          (let* ([root-track (make-track root-playlist-path sep)]
+                 [pl (make-playlist root-track)])
             (playlist-read pl)
-            (new (list (make-track root-playlist-path sep)) pl))))))
+            (new (list root-track) pl))))))
 
   ;;;; vfs-pl: vfs playlist storage.
 
@@ -67,7 +68,7 @@
         (case (track-type t)
           [(DIR)
             (track-uri t)]
-          [(LIST)
+          [(M3U PLS)
             (uri-strip-file (track-uri t))]))
 
       (uri-build-path (reverse
@@ -77,17 +78,17 @@
 
   ;; [proc] vfs-enter!: sets the track at index as current.
   ;; [return]: vpath for the new current playlist. #f on failure.
-  ;; NOTE: The track must be of type LIST.
+  ;; NOTE: The track type must be one of (M3U PLS).
   (define vfs-enter!
     (lambda (vfs index)
       (let* ([parent-pl (vfs-playlist vfs)]
              [t (track-ref parent-pl index)])
-        (cond
-          [(and t (eq? (track-type t) 'LIST))
+        (case (track-type t)
+          [(M3U PLS)
             ;;;; Enter the list.
             (vfs-rebuild! vfs (cons t (vfs-crumbs vfs)))]
           [else
-            ;; Index doesn't exist or track is not a LIST item.
+            ;; track is not a list item.
             #f]))))
 
   ;; [proc] vfs-pop!: back to parent playlist.
@@ -109,7 +110,9 @@
   (define vfs-rebuild!
     (lambda (vfs crumbs)
       (vfs-crumbs-set! vfs crumbs)
-      (vfs-playlist-set! vfs (make-playlist (vfs-path vfs)))
+      ;; TODO revisit the relationship between playlist-path and crumbs.
+      ;; TODO for now, explicitly marking the playlist-path track-title as unused.
+      (vfs-playlist-set! vfs (make-playlist (make-track (vfs-path vfs) 'UNUSED)))
       (playlist-read (vfs-playlist vfs))))
 
   ;;;; vfs-state
