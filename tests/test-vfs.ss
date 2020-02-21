@@ -48,7 +48,8 @@
     (display "#EXTINF:-1,file3 also in tests dir" p)(newline p)
     (display "file3.mp3" p)(newline p)
     (display "#EXTINF:-1,absolute path video file" p)(newline p)
-    (display "/home/file4.mp4" p)(newline p)))
+    (display "/home/file4.mp4" p)(newline p)
+    ))
 
 (define v (make-vfs pl-root))
 
@@ -64,17 +65,21 @@
             '#("tests/list1.m3u" "tests" "file1.mp3")
             (playlist-map track-path (playlist-tracks (vfs-playlist v))))
 
+(test-equal "test root track paths" '#("./tests/list1.m3u" "./tests" "./file1.mp3") (vfs-tracks->paths v))
+
 (vfs-enter! v 0)
 
-(test-skip "test list1 vpath" '("/" "tests") (vfs-vpath v))
+(test-equal "test list1 vpath" '("/" "list1") (vfs-vpath v))
+(test-equal "test list1 path" "./tests/list1.m3u" (vfs-path v))
 
-;; test for list1 track-uri
-;; test for list1 vpath
-;; test for list1 path
+(test-equal "test list1 track paths" '#("./tests/file2.mp3" "./tests/list2.m3u") (vfs-tracks->paths v))
 
-;; test for list2 track-uri
-;; test for list2 vpath
-;; test for list2 path
+(vfs-enter! v 1)
+
+(test-equal "test list2 vpath" '("/" "list1" "list2 inside tests dir") (vfs-vpath v))
+(test-equal "test list2 path" "./tests/list2.m3u" (vfs-path v))
+;; TODO clean up the file3 path. It works and is correct but it's messy.
+(test-equal "test list2 track paths" '#("./tests/./file3.mp3" "/home/file4.mp4") (vfs-tracks->paths v))
 
 (test-end "vfs")
 

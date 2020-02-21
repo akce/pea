@@ -7,6 +7,8 @@
     make-vfs vfs? vfs-playlist
     vfs-enter! vfs-pop! vfs-root!
     vfs-path vfs-vpath
+    vfs-crumbs->path
+    vfs-tracks->paths
     (rename
       (hashtable? vfs-state?)
       (hashtable-keys vfs-state-vpaths))
@@ -42,7 +44,36 @@
 
   (define vfs-path
     (lambda (vfs)
-      (uri-build-path (reverse-map track-uri (vfs-crumbs vfs)))))
+      (vfs-crumbs->path (vfs-crumbs vfs))))
+
+  ;; [proc] vfs-tracks->paths: return a vector of real paths for each track.
+  (define vfs-tracks->paths
+    (lambda (vfs)
+      ;; TODO recalculating the base vfs-crumbs path is wasteful, so look at optimising at some point.
+      ;; TODO the issue is the mix of track and uri types...
+      ;; TODO maybe all this should be calculated in vfs-enter! and cached in the vfs record?
+      (playlist-map
+        (lambda (t)
+          (vfs-crumbs->path (cons t (vfs-crumbs vfs))))
+        (playlist-tracks (vfs-playlist vfs)))))
+
+  ;; [proc] vfs-crumbs->path: convert a list of crumbs to a path string.
+  ;; NB: using crumbs, which are a reversed list of tracks.
+  (define vfs-crumbs->path
+    (lambda (crumbs)
+      ;; Strip playlist files from leading directories (but not from the final
+      ;; crumb!) when building the path.
+      (define (uri-drop-playlist t)
+        (case (track-type t)
+          [(DIR)
+            (track-uri t)]
+          [(LIST)
+            (uri-strip-file (track-uri t))]))
+
+      (uri-build-path (reverse
+                        (cons
+                          (track-uri (car crumbs))
+                          (map uri-drop-playlist (cdr crumbs)))))))
 
   ;; [proc] vfs-enter!: sets the track at index as current.
   ;; [return]: vpath for the new current playlist. #f on failure.
