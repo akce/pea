@@ -14,9 +14,11 @@
 (define ctrl-node #f)
 
 (define default-playlist "root.m3u")
+(define default-statefile "pea-state.scm")
 
 (display "root playlist @ ")(display default-playlist)(newline)
+(display "state savefile @ ")(display default-statefile)(newline)
 (display "pea server control @ ")(display ctrl-node)(display ":")(display service)(newline)
 (display "pea multicast @ ")(display mcast-node)(display ":")(display service)(newline)
-(init default-playlist ctrl-node service mcast-node service)
+(init default-playlist default-statefile ctrl-node service mcast-node service)
 (run)

@@ -35,9 +35,10 @@
     )
 
   (define init
-    (lambda (root-playlist-path ctrl-node ctrl-service mcast-node mcast-service)
+    (lambda (root-playlist-path state-file ctrl-node ctrl-service mcast-node mcast-service)
       (local
         [vfs (make-vfs root-playlist-path)]
+        [cursor (make-cursor vfs state-file)]
         [ctrl-sock (connect-server-socket
                      ctrl-node ctrl-service
                      (address-family inet) (socket-domain stream)
@@ -65,27 +66,38 @@
                     [else
                       ;; process command.
                       (display "client command: ")(display cmd)(newline)
-                      (write (do-command cmd vfs) client-port)
+                      (write (do-command cmd vfs cursor) client-port)
                       (flush-output-port client-port)]))))
             (display "new client ")(display client-fd)(newline))))))
 
   (define do-command
-    (lambda (cmd vfs)
+    (lambda (cmd vfs cursor)
+      (define arg
+        (lambda ()
+          (cadr cmd)))
       (cond
         [(null? cmd)
          #f]
         [else
           (case (car cmd)
-            [(vfs-vpath)	; get current vpath
-             (vfs-vpath vfs)]
+            [(cursor-index)
+             (cursor-index cursor)]
+            [(cursor-move!)
+             (cursor-move! cursor (arg))]
+            [(vfs-enter!)
+             (vfs-enter! vfs (cursor-index cursor))
+             (cursor-sync! cursor)
+             (cursor-save cursor)]
+            [(vfs-pop!)
+             (vfs-pop! vfs)
+             (cursor-sync! cursor)]
+            [(vfs-root!)
+             (vfs-root! vfs)
+             (cursor-sync! cursor)]
             [(vfs-tracks)
              (make-ui-track-list vfs)]
-            [(vfs-enter!)
-             (vfs-enter! vfs (cadr cmd))]
-            [(vfs-pop!)
-             (vfs-pop! vfs)]
-            [(vfs-root!)
-             (vfs-root! vfs)]
+            [(vfs-vpath)	; get current vpath
+             (vfs-vpath vfs)]
             ;; TODO add a help command?
             )])))
 
