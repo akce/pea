@@ -1,10 +1,10 @@
-#! /usr/bin/scheme --script
+#! /usr/bin/chez-scheme --script
 
 (suppress-greeting #t)
 (debug-on-exception #t)
 
 (import
-  (chezscheme)
+  (rnrs)
   (pea server))
 
 ;; TODO load config.
