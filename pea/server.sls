@@ -43,6 +43,17 @@
                      ctrl-node ctrl-service
                      (address-family inet) (socket-domain stream)
                      (address-info all numerichost passive) (ip-protocol tcp))])
+      ;; Watch for server exit.
+      (ev-io 0 (evmask 'READ)
+        (lambda (w revent)
+          (let ([in (read (current-input-port))])
+            (cond
+              [(eof-object? in)
+               (display "server end: goodbye")(newline)
+               (ev-io-stop w)
+               (ev-break (evbreak 'ALL))]
+              ;; TODO add some server console control commands?
+              ))))
       ;;;;; Create the Control socket event watcher.
       (ev-io (socket-fd ctrl-sock) (evmask 'READ)
         (lambda (w revent)
@@ -62,7 +73,10 @@
                   (cond
                     [(eof-object? cmd)
                      (display "close client: ")(display client-fd)(newline)
-                     (ev-io-stop cw)]
+                     (ev-io-stop cw)
+                     (socket-shutdown client-sock (shutdown-method read write))
+                     (socket-close client-sock)
+                     (close-port client-port)]
                     [else
                       ;; process command.
                       (display "client command: ")(display cmd)(newline)
