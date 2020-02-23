@@ -48,20 +48,20 @@
 
   (define init
     (lambda (root-playlist-path state-file ctrl-node ctrl-service mcast-node mcast-service)
-      (let* ([vfs	(make-vfs root-playlist-path)]
-             [cursor	(make-cursor vfs state-file)]
-             [pea	(make-pea vfs cursor
-                          (connect-server-socket
-                            ctrl-node ctrl-service
-                            (address-family inet) (socket-domain stream)
-                            (address-info all numerichost passive) (ip-protocol tcp)))])
+      (my
+        [vfs	(make-vfs root-playlist-path)]
+        [cursor	(make-cursor vfs state-file)]
+        [ctrl	(connect-server-socket
+                  ctrl-node ctrl-service
+                  (address-family inet) (socket-domain stream)
+                  (address-info all numerichost passive) (ip-protocol tcp))]
+        [pea	(make-pea vfs cursor ctrl)])
 
-        ;; Handle stdin commands. ie, server exit.
-        (ev-io 0 (evmask 'READ) stdin-reader)
+      ;; Handle stdin commands. ie, server exit.
+      (ev-io 0 (evmask 'READ) stdin-reader)
 
-        ;;;;; Create the Control socket event watcher.
-        (ev-io (socket-fd (pea-ctrl pea)) (evmask 'READ) (make-control-server pea))
-        )))
+      ;; Create the Control socket event watcher.
+      (ev-io (socket-fd (pea-ctrl pea)) (evmask 'READ) (make-control-server pea))))
 
   (define make-control-server
     (lambda (pea)
@@ -70,7 +70,7 @@
         ;; ie, when a client is ready to connect.
         ;; TODO add abstraction for all of client-* to (socket extended)?
         (let ([client-sock (socket-accept (pea-ctrl pea))])
-          ;;;; Create the client socket event watcher.
+          ;; Create the client socket event watcher.
           (ev-io (socket-fd client-sock) (evmask 'READ) (make-control-client pea client-sock))
           ;; TODO show client address.
           (display "new client ")(display (socket-fd client-sock))(newline)))))
@@ -78,10 +78,12 @@
   (define make-control-client
     (lambda (pea client-sock)
       ;; The control client will read commands, action them, and respond.
-      (define client-port (transcoded-port (socket-input/output-port client-sock) (native-transcoder)))
+      (my
+        [client-port (transcoded-port (socket-input/output-port client-sock) (native-transcoder))])
+
       (lambda (w revent)
-        ;;;; WARNING: Using 'read' here assumes that clients are well behaved and send fully formed sexprs.
-        ;;;; WARNING: A partial datum will cause read to block the thread as it waits for a complete message.
+        ;; WARNING: Using 'read' here assumes that clients are well behaved and send fully formed sexprs.
+        ;; WARNING: A partial datum will cause read to block the thread as it waits for a complete message.
         (let ([cmd (read client-port)])
           (cond
             [(eof-object? cmd)
@@ -99,7 +101,7 @@
 
   (define do-command
     (lambda (cmd pea)
-      (local
+      (my
         [arg (lambda ()
                (cadr cmd))]
         [cursor (pea-cursor pea)]
@@ -157,8 +159,9 @@
           ;; TODO add some server console control commands?
           ))))
 
-  ;; [syntax] local: short-hand for batch defines.
-  (define-syntax local
+  ;; [syntax] my: short-hand for batch defines.
+  ;; Name gratuitously taken from perl. I also like that it's nice and short.
+  (define-syntax my
     (syntax-rules ()
       [(_ (name val) ...)
        (begin
