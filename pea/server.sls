@@ -87,9 +87,9 @@
       (lambda (w revent)
         ;; WARNING: Using 'read' here assumes that clients are well behaved and send fully formed sexprs.
         ;; WARNING: A partial datum will cause read to block the thread as it waits for a complete message.
-        (let ([cmd (read client-port)])
+        (let ([input (read client-port)])
           (cond
-            [(eof-object? cmd)
+            [(eof-object? input)
              ;; TODO show client address.
              (display "close client: ")(display (ev-io-fd-get w))(newline)
              (ev-io-stop w)
@@ -98,42 +98,50 @@
              (close-port client-port)]
             [else
               ;; process command.
-              (display "client command: ")(display cmd)(newline)
-              (write (do-command cmd pea) client-port)
+              (display "client command: ")(display input)(newline)
+              (write (process-input input pea) client-port)
               (flush-output-port client-port)])))))
 
-  (define do-command
-    (lambda (cmd pea)
+  (define process-input
+    (lambda (input pea)
       (my
+        ;; sanitise 1st arg (if any) of input.
+        [command (lambda ()
+                   (cond
+                     [(null? input)
+                       'EMPTY]
+                     [(list? input)
+                      (car input)]
+                     [else
+                       input]))]
         [arg (lambda ()
-               (cadr cmd))]
+               (cadr input))]
         [cursor (pea-cursor pea)]
         [vfs (pea-vfs pea)])
-      (cond
-        [(null? cmd)
-         #f]
+      ;; List these commands in alphabetic order within their groupings.
+      (case (command)
+        ;;;; VFS navigation.
+        [(enter!)
+         (vfs-enter! vfs (cursor-index cursor))
+         (cursor-sync! cursor)
+         (cursor-save cursor)]
+        [(move!)
+         (cursor-move! cursor (arg))]
+        [(pop!)
+         (vfs-pop! vfs)
+         (cursor-sync! cursor)]
+        [(pos)
+         (cursor-index cursor)]
+        [(root!)
+         (vfs-root! vfs)
+         (cursor-sync! cursor)]
+        [(tracks)
+         (make-ui-track-list vfs)]
+        [(vpath)	; get current vpath
+         (vfs-vpath vfs)]
+        ;; TODO add a help command?
         [else
-          (case (car cmd)
-            [(cursor-index)
-             (cursor-index cursor)]
-            [(cursor-move!)
-             (cursor-move! cursor (arg))]
-            [(vfs-enter!)
-             (vfs-enter! vfs (cursor-index cursor))
-             (cursor-sync! cursor)
-             (cursor-save cursor)]
-            [(vfs-pop!)
-             (vfs-pop! vfs)
-             (cursor-sync! cursor)]
-            [(vfs-root!)
-             (vfs-root! vfs)
-             (cursor-sync! cursor)]
-            [(vfs-tracks)
-             (make-ui-track-list vfs)]
-            [(vfs-vpath)	; get current vpath
-             (vfs-vpath vfs)]
-            ;; TODO add a help command?
-            )])))
+          'eh?])))
 
   ;; [proc] make-ui-track-list: return current playlist tracks with info that a UI would find useful.
   ;; ie,
