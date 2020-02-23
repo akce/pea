@@ -27,6 +27,7 @@
     )
   (import
     (rnrs)
+    (only (chezscheme) display-condition)
     (pea playlist)
     (pea vfs)
     ;; 3rd party libs.
@@ -99,7 +100,14 @@
             [else
               ;; process command.
               (display "client command: ")(display input)(newline)
-              (write (process-input input pea) client-port)
+              (guard
+                (e [else
+                     ;; TODO define condition->string such that string quotes are escaped..
+                     ;; TODO then do some proper server logging..
+                     (display-condition e)
+                     ;; TODO and then define a client message type.
+                     (display-condition e client-port)])
+                (write (process-input input pea) client-port))
               (flush-output-port client-port)])))))
 
   (define process-input
