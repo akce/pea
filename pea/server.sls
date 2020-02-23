@@ -80,6 +80,9 @@
       ;; The control client will read commands, action them, and respond.
       (my
         [client-port (transcoded-port (socket-input/output-port client-sock) (native-transcoder))])
+      ;; Return a welcome message.
+      (write '(MESSAGE "Welcome to PEA! :)") client-port)
+      (flush-output-port client-port)
 
       (lambda (w revent)
         ;; WARNING: Using 'read' here assumes that clients are well behaved and send fully formed sexprs.
