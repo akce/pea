@@ -45,13 +45,20 @@
 
   (define make-playlist-track
     (lambda (parent-track entry-path . title)
-      (let ([uri (make-uri entry-path)])
+      (let* ([uri (make-uri entry-path)]
+             [type (uri-media-type uri (track-uri parent-track))])
         (make-track
           uri
           ;; Set the title to last part of the path if title isn't given.
-          (if (or (null? title) title) (path-root (path-last entry-path)) (car title))
+          (if (or (null? title) title)
+              (if (eq? type 'DIR)
+                  ;; Directories can be very freeform so use the entire dirname.
+                  (path-last entry-path)
+                  ;; Otherwise files have the extension lopped off.
+                  (path-root (path-last entry-path)))
+              (car title))
           ;; Add parent-track URI so that full path is available in case of file system stat.
-          (uri-media-type uri (track-uri parent-track))))))
+          type))))
 
   ;; [proc] track-join-path: returns a copy of track-b with track-a-path + track-b-path.
   ;; track-a media *must* be a LIST sub-type.
