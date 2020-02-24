@@ -4,11 +4,9 @@
 (library
   (pea vfs)
   (export
-    make-vfs vfs? vfs-playlist
+    make-vfs vfs? vfs-tracks
     vfs-enter! vfs-pop! vfs-root!
-    vfs-path vfs-vpath
-    vfs-crumbs->path
-    vfs-tracks->paths
+    vfs-vpath
 
     make-cursor cursor? cursor-index
     cursor-sync!
@@ -22,76 +20,43 @@
     (pea playlist)
     (pea util))
 
-  (define sep "/")
-
   (define-record-type vfs
     (fields
-      [mutable	crumbs]		; list of tracks leading to current playlist.
+      [mutable	crumbs]		; list of playlist-tracks leading to current playlist.
 				; NB: crumbs are stored as a LIFO stack. eg, crumbs[0] is the current track.
 				; NB: this makes it very easy to push and pop playlists.
-      [mutable	playlist]	; cache of current playlist. TODO may not be needed.
+      [mutable	tracks]		; playlist cache: ie, list of tracks for current playlist (only!)
       )
     (protocol
       (lambda (new)
         ;; create and initialise vfs with root playlist path.
         (lambda (root-playlist-path)
-          (let* ([root-track (make-track root-playlist-path sep)]
-                 [pl (make-playlist root-track)])
-            (playlist-read pl)
-            (new (list root-track) pl))))))
+          (let ([root-track (make-root-track root-playlist-path)])
+            (new
+              (list root-track)			; initial crumbs
+              (playlist-read root-track)	; initial tracks cache
+              ))))))
 
   ;;;; vfs-pl: vfs playlist storage.
 
+  ;; [proc] vfs-vpath: vpath is the list of track labels from the track crumbs.
   (define vfs-vpath
     (lambda (vfs)
       (reverse-map track-title (vfs-crumbs vfs))))
 
-  (define vfs-path
-    (lambda (vfs)
-      (vfs-crumbs->path (vfs-crumbs vfs))))
-
-  ;; [proc] vfs-tracks->paths: return a vector of real paths for each track.
-  (define vfs-tracks->paths
-    (lambda (vfs)
-      ;; TODO recalculating the base vfs-crumbs path is wasteful, so look at optimising at some point.
-      ;; TODO the issue is the mix of track and uri types...
-      ;; TODO maybe all this should be calculated in vfs-enter! and cached in the vfs record?
-      (playlist-map
-        (lambda (t)
-          (vfs-crumbs->path (cons t (vfs-crumbs vfs))))
-        (playlist-tracks (vfs-playlist vfs)))))
-
-  ;; [proc] vfs-crumbs->path: convert a list of crumbs to a path string.
-  ;; NB: using crumbs, which are a reversed list of tracks.
-  (define vfs-crumbs->path
-    (lambda (crumbs)
-      ;; Strip playlist files from leading directories (but not from the final
-      ;; crumb!) when building the path.
-      (define (uri-drop-playlist t)
-        (case (track-type t)
-          [(DIR)
-            (track-uri t)]
-          [(M3U PLS)
-            (uri-strip-file (track-uri t))]))
-
-      (uri-build-path (reverse
-                        (cons
-                          (track-uri (car crumbs))
-                          (map uri-drop-playlist (cdr crumbs)))))))
-
   ;; [proc] vfs-enter!: sets the track at index as current.
-  ;; [return]: vpath for the new current playlist. #f on failure.
-  ;; NOTE: The track type must be one of (M3U PLS).
+  ;; [return]: the new vfs-vpath. #f on failure.
   (define vfs-enter!
     (lambda (vfs index)
-      (let* ([parent-pl (vfs-playlist vfs)]
-             [t (track-ref parent-pl index)])
+      (let* ([parent-track (car (vfs-crumbs vfs))]
+             [t (list-ref (vfs-tracks vfs) index)])
         (case (track-type t)
           [(DIR M3U PLS)
             ;;;; Enter the list.
-            (vfs-rebuild! vfs (cons t (vfs-crumbs vfs)))]
+            (vfs-rebuild! vfs (cons (track-join-path parent-track t) (vfs-crumbs vfs)))]
           [else
             ;; track is not a list item.
+            ;; TODO raise exception instead?
             #f]))))
 
   ;; [proc] vfs-pop!: back to parent playlist.
@@ -100,6 +65,7 @@
       (let ([tail (cdr (vfs-crumbs vfs))])
         (cond
           [(null? tail)		; don't remove the root crumb.
+           ;; TODO raise exception instead?
            #f]
           [else
             (vfs-rebuild! vfs tail)]))))
@@ -112,11 +78,10 @@
   ;; [proc] vfs-rebuild!: rebuild playlist using new set of crumbs.
   (define vfs-rebuild!
     (lambda (vfs crumbs)
-      (vfs-crumbs-set! vfs crumbs)
-      ;; TODO revisit the relationship between playlist-path and crumbs.
-      ;; TODO for now, explicitly marking the playlist-path track-title as unused.
-      (vfs-playlist-set! vfs (make-playlist (make-track (vfs-path vfs) 'UNUSED)))
-      (playlist-read (vfs-playlist vfs))))
+      (let ([tracks (playlist-read (car crumbs))])
+        (when tracks
+          (vfs-crumbs-set! vfs crumbs)
+          (vfs-tracks-set! vfs tracks)))))
 
   ;;;; Cursor: pointer/selector of vfs tracks.
   (define-record-type cursor
@@ -160,7 +125,7 @@
       (let setter ([i pos])
         (cond
           [(= pl-len 0)
-           (error 'cursor-set "attempt to set position on empty playlist." i)]
+           (error 'cursor-set "attempt to set position on empty playlist." (track-uri (car (vfs-crumbs (cursor-vfs cursor)))))]
           [(< i 0)
            (setter 0)]
           [(>= i pl-len)
@@ -247,5 +212,5 @@
   ;; accessor shortcut.
   (define cursor-playlist-length
     (lambda (cursor)
-      (vector-length (playlist-tracks (vfs-playlist (cursor-vfs cursor))))))
+      (length (vfs-tracks (cursor-vfs cursor)))))
   )

@@ -157,11 +157,10 @@
   (define make-ui-track-list
     (lambda (vfs)
       (list 'TRACKS
-        (vector->list
-          (playlist-map
-            (lambda (t)
-              (cons (track-title t) (track-type t)))
-            (playlist-tracks (vfs-playlist vfs)))))))
+        (map
+          (lambda (t)
+            (cons (track-title t) (track-type t)))
+          (vfs-tracks vfs)))))
 
   (define run
     (lambda ()

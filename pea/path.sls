@@ -5,13 +5,13 @@
   (export
     make-uri uri? uri->string uri-scheme uri-authority uri-path uri-query uri-fragment
     uri-url? uri-absolute?
-    uri-strip-file uri-media-type uri-build-path
+    uri-strip-file uri-media-type uri-join-path
     )
   (import
     (rnrs)
     (pea util)
     (irregex)
-    (only (chezscheme) path-absolute? path-extension path-parent))
+    (only (chezscheme) file-directory? path-absolute? path-extension path-parent))
 
   ;; URI irregex pattern derived from that defined in RFC3986:
   ;; https://tools.ietf.org/html/rfc3986#page-50
@@ -106,7 +106,7 @@
           [m3u-hashes (map string-hash '("m3u" "m3u8"))]
           [pls-hash (string-hash "pls")]
           [dir-hash (string-hash "")])
-      (lambda (uri)
+      (lambda (uri . parent-uri)
         (cond
           ;; For now, assume that all URLs are internet radio stations.
           [(uri-url? uri)
@@ -124,17 +124,22 @@
                  'PLS]
                 [(eq? ext dir-hash)
                  'DIR]
+                ;; As a last resort there's a stat to see if it's a directory.
+                [(file-directory?
+                   (uri-path
+                     (if (null? parent-uri)
+                         uri
+                         (uri-join-path (car parent-uri) uri))))
+                 'DIR]
                 [else
                   #f]))]))))
 
-  ;; [proc] uri-build-path: builds a real path based on a list of URIs.
-  ;; [return] string representing the URI.
+  ;; [proc] uri-join-path: builds a real-path-uri based on a list of URIs.
+  ;; [return] URI of joined path.
   ;; Used to build a real path when traversing playlists.
   ;; An absolute path resets the return path, relative paths are appended.
-  ;;
-  ;; TODO return a uri object?
-  (define uri-build-path
-    (lambda (uris)
+  (define uri-join-path
+    (lambda uris
       (define (get-parts us parts)
         (cond
           [(null? us)
@@ -148,5 +153,7 @@
       (define (uri->path u)
         (let ([s (uri->string u)])
           (if (or (not s) (string=? "" s)) "." s)))
-      (apply string-join "/" (map uri->path (get-parts uris '())))))
+      (make-uri
+        (apply string-join "/"
+               (map uri->path (get-parts uris '()))))))
   )

@@ -10,12 +10,9 @@
 (library
   (pea playlist)
   (export
-    make-track track? track-uri track-title track-type
+    track? track-uri track-title track-type
+    make-root-track track-join-path
 
-    make-playlist playlist? playlist-path playlist-tracks
-    track-ref
-
-    playlist-map
     ;; general factory func.
     playlist-read
     ;;;; debug exports.
@@ -26,11 +23,11 @@
     ;; .pls files.
     pls-read)
   (import
-    (rename (rnrs) (vector-map playlist-map))
+    (rnrs)
     (pea path)
     (pea util)
     (irregex)
-    (only (chezscheme) directory-list path-extension path-last path-root))
+    (only (chezscheme) directory-list path-last path-root))
 
   ;; Simple track record.
   (define-record-type track
@@ -38,57 +35,62 @@
       uri
       title
       type
-      )
-    (protocol
-      (lambda (new)
-        (lambda (path title)
-          (let ([uri (make-uri path)])
-            (new uri
-                 ;; Set the title to last part of the path if title isn't given (#f).
-                 (if title title (path-root (path-last path)))
-                 (uri-media-type uri)))))))
+      ))
 
-  (define-record-type playlist
-    (fields
-      path		; path contains the track identifying the playlist.
-      [mutable tracks]
-      )
-    (protocol
-      (lambda (new)
-        (lambda (track)
-          (new track '#())))))
+  ;; [proc] make-root-track: a specialised track that has no parent path.
+  (define make-root-track
+    (lambda (path)
+      (let ([uri (make-uri path)])
+        (make-track uri "/" (uri-media-type uri)))))
+
+  (define make-playlist-track
+    (lambda (parent-track entry-path . title)
+      (let ([uri (make-uri entry-path)])
+        (make-track
+          uri
+          ;; Set the title to last part of the path if title isn't given.
+          (if (or (null? title) title) (path-root (path-last entry-path)) (car title))
+          ;; Add parent-track URI so that full path is available in case of file system stat.
+          (uri-media-type uri (track-uri parent-track))))))
+
+  ;; [proc] track-join-path: returns a copy of track-b with track-a-path + track-b-path.
+  ;; track-a media *must* be a LIST sub-type.
+  (define track-join-path
+    (lambda (track-a track-b)
+      (define drop-playlist
+        (lambda ()
+          (case (track-type track-a)
+            [(DIR)
+             (track-uri track-a)]
+            [(M3U PLS)
+             (uri-strip-file (track-uri track-a))]
+            [else
+              (error #f "parent track is not a list type" track-a)])))
+      (make-track
+        (uri-join-path (drop-playlist) (track-uri track-b))
+        (track-title track-b)
+        (track-type track-b))))
 
   ;; [proc] playlist-read: reads known playlist types and returns contained tracks.
-  ;; An empty playlist is returned for unknown playlist file types.
+  ;; An empty list is returned for unknown playlist file types.
   (define playlist-read
-    (lambda (pl)
-      (playlist-tracks-set! pl
-        (case (track-type (playlist-path pl))
-            [(DIR)
-             (dir-read (uri->string (track-uri (playlist-path pl))))]
-            [(M3U)
-             (m3u-read (uri->string (track-uri (playlist-path pl))))]
-            [(PLS)
-             (pls-read (uri->string (track-uri (playlist-path pl))))]
-            [else
-              '#()]))))
-
-  ;; [proc] track-ref: shorthand for obtaining the playlist track at index.
-  (define track-ref
-    (lambda (pl index)
-      (vector-ref (playlist-tracks pl) index)))
+    (lambda (pt)
+      (case (track-type pt)
+        [(DIR)	(dir-read pt)]
+        [(M3U)	(m3u-read pt)]
+        [(PLS)	(pls-read pt)]
+        [else	'()])))
 
   ;; [proc] dir-read: loads only known media types from directory.
   (define dir-read
-    (lambda (path)
-      (list->vector
-        (filter
-          track-type
-          (map
-            (lambda (entry)
-              (make-track entry #f))
-            ;; TODO make the sort comparison function configurable.
-            (list-sort string-ci<? (directory-list path)))))))
+    (lambda (track)
+      (filter
+        track-type
+        (map
+          (lambda (entry)
+            (make-playlist-track track entry))
+          ;; TODO make the sort comparison function configurable.
+          (list-sort string-ci<? (directory-list (uri->string (track-uri track))))))))
 
   ;;;; Filetype: M3U M3U8 */*mpegurl
   ;; For further detail:
@@ -99,18 +101,18 @@
   ;; [proc] m3u-read: Returns a playlist of tracks from the m3u file.
   ;; Simple parser that reads paths and optionally #EXTINF track titles.
   (define m3u-read
-    (lambda (path)
-      (let loop ([lines (slurp path)] [tracks '()] [title #f])
+    (lambda (track)
+      (let loop ([lines (slurp (uri->string (track-uri track)))] [tracks '()] [title #f])
         (cond
           [(null? lines)
-           (list->vector (reverse tracks))]
+           (reverse tracks)]
           [(m3u-parse-title (car lines)) => (lambda (x)
                                               (loop (cdr lines) tracks x))]
           [(m3u-empty-line? (car lines))
            ;; skip blank lines.
            (loop (cdr lines) tracks title)]
           [else
-            (loop (cdr lines) (cons (make-track (car lines) title) tracks) #f)]))))
+            (loop (cdr lines) (cons (make-playlist-track track (car lines) title) tracks) #f)]))))
 
   ;; [proc] m3u-parse-title: Extract title from EXTINF metadata line.
   ;; #f if the line is not an EXTINF metadata line.
@@ -152,8 +154,8 @@
   ;; It ignores the Version and NumberOfEntryFields.
   ;; It treats both ; and # as comment characters.
   (define pls-read
-    (lambda (path)
-      (let ([lines (pls-strip-lines (slurp path))]
+    (lambda (track)
+      (let ([lines (pls-strip-lines (slurp (uri->string (track-uri track))))]
             [files (make-eq-hashtable)]
             [titles (make-eq-hashtable)])
         (for-each
@@ -165,12 +167,13 @@
                                            (hashtable-set! titles (car x) (cdr x)))]))
           lines)
         ;; Build and return track listing. Use files for keys as they're mandatory in pls files.
-        (playlist-map
+        (map
           (lambda (key)
-            (make-track
+            (make-playlist-track
+              track
               (hashtable-ref files key #f)
               (hashtable-ref titles key #f)))
-          (vector-sort < (hashtable-keys files))))))
+          (list-sort < (vector->list (hashtable-keys files)))))))
 
   ;; [proc] pls-parse-file: Parse a pls File line.
   ;; ie, File23=blah -> '(23 "blah")
