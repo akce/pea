@@ -4,7 +4,7 @@
 (library
   (pea vfs)
   (export
-    make-vfs vfs? vfs-tracks
+    make-vfs vfs? vfs-current vfs-tracks
     vfs-enter! vfs-pop! vfs-root!
     vfs-vpath
 
@@ -44,8 +44,12 @@
     (lambda (vfs)
       (reverse-map track-title (vfs-crumbs vfs))))
 
+  (define vfs-current
+    (lambda (vfs)
+      (car (vfs-crumbs vfs))))
+
   ;; [proc] vfs-enter!: sets the track at index as current.
-  ;; [return]: the new vfs-vpath. #f on failure.
+  ;; [return]: the new vfs-vpath. Exception on failure.
   (define vfs-enter!
     (lambda (vfs index)
       (let* ([parent-track (car (vfs-crumbs vfs))]
@@ -56,8 +60,7 @@
             (vfs-rebuild! vfs (cons (track-join-path parent-track t) (vfs-crumbs vfs)))]
           [else
             ;; track is not a list item.
-            ;; TODO raise exception instead?
-            #f]))))
+            (error #f "can only enter a LIST track type" t)]))))
 
   ;; [proc] vfs-pop!: back to parent playlist.
   (define vfs-pop!
@@ -65,8 +68,7 @@
       (let ([tail (cdr (vfs-crumbs vfs))])
         (cond
           [(null? tail)		; don't remove the root crumb.
-           ;; TODO raise exception instead?
-           #f]
+           (error #f "cannot pop! past root path" tail)]
           [else
             (vfs-rebuild! vfs tail)]))))
 
@@ -76,12 +78,16 @@
       (vfs-rebuild! vfs (list (car (reverse (vfs-crumbs vfs)))))))
 
   ;; [proc] vfs-rebuild!: rebuild playlist using new set of crumbs.
+  ;; [return] current vpath.
   (define vfs-rebuild!
     (lambda (vfs crumbs)
       (let ([tracks (playlist-read (car crumbs))])
-        (when tracks
-          (vfs-crumbs-set! vfs crumbs)
-          (vfs-tracks-set! vfs tracks)))))
+        (if tracks
+            (begin
+              (vfs-crumbs-set! vfs crumbs)
+              (vfs-tracks-set! vfs tracks)
+              (vfs-vpath vfs))
+            (error #f "cannot enter! empty playlist" (vfs-vpath vfs))))))
 
   ;;;; Cursor: pointer/selector of vfs tracks.
   (define-record-type cursor
@@ -108,13 +114,19 @@
         (get-pos-from-alist (cursor-vpath-hash cursor) (cursor-alist cursor)))))
 
   ;; [proc] cursor-move!: moves cursor position by offset amount.
+  ;; [return] new position index or #f if unchanged.
   ;; Use a negative offset to go up the list, positive to go down.
   ;; An error is raised if movement is attempted on an empty vfs playlist.
   (define cursor-move!
     (lambda (cursor offset)
-      (cursor-set! cursor (+ (cursor-index cursor) offset))))
+      (let* ([old-pos (cursor-index cursor)]
+             [new-pos (cursor-set! cursor (+ old-pos offset))])
+        (if (= old-pos new-pos)
+            #f
+            new-pos))))
 
   ;; [proc] cursor-set!: sets absolute position of cursor.
+  ;; [return] new index, or #f if cursor position is unchanged.
   ;; cursor position will be changed to fit within playlist bounds.
   ;; error is thrown if the vfs playlist is empty.
   (define cursor-set!
@@ -130,11 +142,14 @@
            (setter 0)]
           [(>= i pl-len)
            (setter (- pl-len 1))]
-          [(= i (cursor-index cursor))	; position unchanged (do nothing).
-           (if #f #f)]
+          ;; TODO index may be the same after changing vpaths so comment this out for now.
+          ;; TODO need to think on this a bit, maybe invalidate the index for this situation.
+          #;[(= i (cursor-index cursor))	; position unchanged (do nothing).
+           #f]
           [else		; cursor pos/i is within bounds.
             (cursor-index-set! cursor i)
-            (cursor-update-alist! cursor i)]))))
+            (cursor-update-alist! cursor i)
+            i]))))
 
   ;; [proc] cursor-save: Writes a cursor-alist to file.
   (define cursor-save

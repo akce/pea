@@ -20,5 +20,5 @@
 (display "state savefile @ ")(display default-statefile)(newline)
 (display "pea server control @ ")(display ctrl-node)(display ":")(display service)(newline)
 (display "pea multicast @ ")(display mcast-node)(display ":")(display service)(newline)
-(init default-playlist default-statefile ctrl-node service mcast-node service)
-(run)
+(let ([pea (init default-playlist default-statefile ctrl-node service mcast-node service)])
+  (run pea))
