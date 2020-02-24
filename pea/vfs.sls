@@ -181,7 +181,7 @@
   ;; [proc] vpath-hash: create a hash for the vpath.
   (define vpath-hash
     (lambda (vpath)
-      (string-hash (apply string-join "" vpath))))
+      (string-hash (apply string-join "/" vpath))))
 
   ;; [proc] cursor-update-alist!: updates the saved position for the cursor.
   ;; This is also does a bit of housekeeping in that zero positions are not stored and actively removed.
