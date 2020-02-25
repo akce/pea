@@ -30,11 +30,30 @@
     (only (chezscheme) display-condition)
     (pea player)
     (pea playlist)
-    (only (pea util) my)
+    (only (pea util) define-enum my)
     (pea vfs)
     ;; 3rd party libs.
     (ev)
     (socket extended)
+    )
+
+  ;; PEA states follow a simple pattern:
+  ;; - client requests player enter a state,
+  ;; - player callback informs on new state.
+  ;;
+  ;; Allowed state transitions:
+  ;; (PAUSED | PLAYING) + STOP -> STOPPED
+  ;; (STOPPED) + PLAY -> PLAYING
+  ;; (PLAYING) + PAUSE -> PAUSED
+  ;;
+  ;; Using define-enum here to help catch mis-typed symbols, but probably not needed in the long term.
+  (define-enum state
+    [PAUSE	'PAUSE]		; Client requested pause.
+    [PLAY	'PLAY]		; Client requested play.
+    [STOP	'STOP]		; Client requested stop.
+    [PAUSED	'PAUSED]	; Player state PAUSED.
+    [PLAYING	'PLAYING]	; Player state PLAYING.
+    [STOPPED	'STOPPED]	; Played state STOPPED.
     )
 
   (define-record-type pea
@@ -44,12 +63,13 @@
       [immutable	ctrl]		; control socket.
       [immutable	mcast-sock]	; multi-cast socket.
       [immutable	mcast-port]	; multi-cast port.
+      [mutable		state]		; pea state. ie, (state *).
       )
     (protocol
       (lambda (new)
         (lambda (vfs cursor ctrl mcast)
           (let ([mcast-port (socket->port mcast)])
-            (new vfs cursor ctrl mcast mcast-port))))))
+            (new vfs cursor ctrl mcast mcast-port (state STOPPED)))))))
 
   (define init
     (lambda (root-playlist-path state-file ctrl-node ctrl-service mcast-node mcast-service)
@@ -147,13 +167,25 @@
         (case (command)
           ;;;; Player commands.
           [(play!)
-           (play (list-ref (vfs-tracks vfs) (cursor-index cursor))
-                 (vfs-current vfs))
-           (cursor-save cursor)]
+           ;; For now, only allow PLAY from STOPPED state. In future, play might be able to interrupt
+           ;; any state to re-start or resume play or play from a new cursor position.
+           (case (pea-state pea)
+             [(STOPPED)
+              (pea-state-set! pea (state PLAY))
+              (play (list-ref (vfs-tracks vfs) (cursor-index cursor))
+                    (vfs-current vfs))
+              (cursor-save cursor)])]
           [(stop!)
-           (stop)]
+           (case (pea-state pea)
+             [(PLAY PLAYING PAUSING PAUSED)
+              (pea-state-set! pea (state STOP))
+              (stop)])]
           [(toggle!)	; as in toggle pause.
-           (toggle-pause)]
+           (case (pea-state pea)
+             [(STOP STOPPED)
+              (if #f #f)]
+             [else
+               (toggle-pause)])]
           ;;;; VFS navigation.
           [(enter!)
            ;; Ensure enter! then sync!
@@ -227,9 +259,34 @@
   (define make-player-event-handler
     (lambda (pea)
       (lambda (msg)
-        ;; Certain messages, namely state changes, require action within pea too.
-        (display msg)(newline)
-        (write-now msg (pea-mcast-port pea)))))
+        ;; Certain messages, eg state changes, require action within pea and may need to be translated.
+        (let ([xmsg (case (car msg)
+                      [(STOPPED)
+                       (pea-state-set! pea (state STOPPED))
+                       '(STATE STOPPED)]
+                      [(PLAYING)
+                       (if (eq? (pea-state pea) (state PLAYING))
+                           #f
+                           (begin
+                             (pea-state-set! pea (state PLAYING))
+                             '(STATE PLAYING)))]
+                      [(PAUSED)
+                       (if (eq? (pea-state pea) (state PAUSED))
+                           #f
+                           (begin
+                             (pea-state-set! pea (state PAUSED))
+                             '(STATE PAUSED)))]
+                      [(UNPAUSED)
+                       (if (eq? (pea-state pea) (state PLAYING))
+                           #f
+                           (begin
+                             (pea-state-set! pea (state PLAYING))
+                             '(STATE PLAYING)))]
+                      [else
+                        msg])])
+          (when xmsg
+            (display xmsg)(newline)
+            (write-now xmsg (pea-mcast-port pea)))))))
 
   ;; [proc] write-now: write message and flush port.
   ;; If I had a dollar for the number of times i've forgotten to flush after write....

@@ -1,5 +1,6 @@
 (library (pea util)
   (export
+    define-enum
     my
     reverse-map
     slurp
@@ -7,7 +8,38 @@
     )
   (import
     (rnrs)
-    (irregex))
+    (irregex)
+    (only (chezscheme) datum))
+
+  ;; [syntax] define-enum: generates a syntax transformer that evaluates the value of an enum at compile time.
+  ;; eg, using trace-define-syntax:
+  ;; > (define-enum e [a 1] [b 2] [c 3])
+  ;; |(define-enum (define-enum e (a 1) (b 2) (c 3)))
+  ;; |(define-syntax e
+  ;;    (lambda (x)
+  ;;      (syntax-case x ()
+  ;;        [(_ v) (eq? (datum v) (syntax->datum #'a)) #'1]
+  ;;        [(_ v) (eq? (datum v) (syntax->datum #'b)) #'2]
+  ;;        [(_ v) (eq? (datum v) (syntax->datum #'c)) #'3])))
+  ;; > (e a)
+  ;; 1
+  ;; > (e b)
+  ;; 2
+  ;; > (e c)
+  ;; 3
+  ;; > (e d)
+  ;; Exception: invalid syntax (e d)
+  ;; Type (debug) to enter the debugger.
+  ;; >
+  (define-syntax define-enum
+    (syntax-rules ()
+      [(_ group (var* val*) ...)
+       (define-syntax group
+         (lambda (x)
+           (syntax-case x ()
+             [(_ v)
+              (eq? (datum v) (syntax->datum #'var*))
+              #'val*] ...)))]))
 
   ;; [syntax] my: short-hand for batch defines.
   ;; Name gratuitously taken from perl. I also like that it's nice and short.
