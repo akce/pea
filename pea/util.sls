@@ -1,5 +1,6 @@
 (library (pea util)
   (export
+    my
     reverse-map
     slurp
     string-join string-trim-both
@@ -7,6 +8,14 @@
   (import
     (rnrs)
     (irregex))
+
+  ;; [syntax] my: short-hand for batch defines.
+  ;; Name gratuitously taken from perl. I also like that it's nice and short.
+  (define-syntax my
+    (syntax-rules ()
+      [(_ (name val) ...)
+       (begin
+         (define name val) ...)]))
 
   ;; [proc] reverse-map: like map, but list is returned in reverse.
   ;; TODO support multiple lists.

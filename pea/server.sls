@@ -28,7 +28,9 @@
   (import
     (rnrs)
     (only (chezscheme) display-condition)
+    (pea player)
     (pea playlist)
+    (only (pea util) my)
     (pea vfs)
     ;; 3rd party libs.
     (ev)
@@ -71,9 +73,7 @@
       ;; Create the Control socket event watcher.
       (ev-io (socket-fd (pea-ctrl pea)) (evmask 'READ) (make-control-server pea))
 
-      (init-player
-        (lambda (msg)
-          (write-now msg (pea-mcast-port pea))))
+      (init-player (make-player-event-handler pea))
       pea))
 
   (define make-control-server
@@ -145,6 +145,15 @@
 
         ;; List these commands in alphabetic order within their groupings.
         (case (command)
+          ;;;; Player commands.
+          [(play!)
+           (play (list-ref (vfs-tracks vfs) (cursor-index cursor))
+                 (vfs-current vfs))
+           (cursor-save cursor)]
+          [(stop!)
+           (stop)]
+          [(toggle!)	; as in toggle pause.
+           (toggle-pause)]
           ;;;; VFS navigation.
           [(enter!)
            ;; Ensure enter! then sync!
@@ -214,11 +223,13 @@
     (lambda (sock)
       (transcoded-port (socket-input/output-port sock) (native-transcoder))))
 
-  ;; [proc] make-player-callback: player state change callback.
-  (define make-player-callback
-    (lambda (mcast-port)
+  ;; [proc] make-player-event-handler: player state change callback.
+  (define make-player-event-handler
+    (lambda (pea)
       (lambda (msg)
-        (write-now msg mcast-port))))
+        ;; Certain messages, namely state changes, require action within pea too.
+        (display msg)(newline)
+        (write-now msg (pea-mcast-port pea)))))
 
   ;; [proc] write-now: write message and flush port.
   ;; If I had a dollar for the number of times i've forgotten to flush after write....
@@ -226,12 +237,4 @@
     (lambda (msg port)
       (write msg port)
       (flush-output-port port)))
-
-  ;; [syntax] my: short-hand for batch defines.
-  ;; Name gratuitously taken from perl. I also like that it's nice and short.
-  (define-syntax my
-    (syntax-rules ()
-      [(_ (name val) ...)
-       (begin
-         (define name val) ...)]))
   )
