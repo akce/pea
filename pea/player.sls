@@ -50,12 +50,12 @@
         (lambda (eid)
           ;; Translate MPV relevant events to PEA events then send to callback function.
           (cond
-            [(= eid MPV_EVENT_METADATA_UPDATE)
+            [(= eid (mpv-event-type metadata-update))
              (cb `(TAGS ,(mpv-get-property/node "metadata")))]
-            [(= eid MPV_EVENT_IDLE)
+            [(= eid (mpv-event-type idle))
              (cb '(STOPPED))]
             [(or
-               (= eid MPV_EVENT_PLAYBACK_RESTART)
+               (= eid (mpv-event-type playback-restart))
                (= eid 13))		; deprecated: MPV_EVENT_UNPAUSE
              (cb '(PLAYING))]
             ;; TODO get pause/unpause info via mpv_observe_property as these events are deprecated.
@@ -63,10 +63,10 @@
              (cb '(PAUSED))]
             ;; ignore these events.
             [(or
-               (= eid MPV_EVENT_START_FILE)
-               (= eid MPV_EVENT_END_FILE)
-               (= eid MPV_EVENT_AUDIO_RECONFIG)
-               (= eid MPV_EVENT_FILE_LOADED)
+               (= eid (mpv-event-type start-file))
+               (= eid (mpv-event-type end-file))
+               (= eid (mpv-event-type audio-reconfig))
+               (= eid (mpv-event-type file-loaded))
                (= eid 9)	; deprecated: MPV_EVENT_TRACKS_CHANGED
                )
              (if #f #f)]
