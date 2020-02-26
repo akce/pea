@@ -45,7 +45,15 @@
     (lambda (cb)
       (mpv-create)
       (mpv-set-property "audio-display" #f)	; disable mpv embedded coverart display. 
+      ;; Turn on keyboard input for videos.
+      (mpv-set-option/string "input-default-bindings" "yes")
+      (mpv-set-option/string "input-vo-keyboard" "yes")
+      (mpv-set-option/flag "osc" #t)
       (mpv-initialize)
+      ;; Rebind default problem keys. Namely, 'q' must *not* shutdown. Stop instead.
+      (mpv-command "keybind" "q" "stop")
+      ;; Default 's' action is to take a screenshot, but pea can't guarantee write access. Stop instead.
+      (mpv-command "keybind" "s" "stop")
       (register-mpv-event-handler
         (lambda (eid)
           ;; Translate MPV relevant events to PEA events then send to callback function.
