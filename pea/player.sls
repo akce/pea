@@ -54,34 +54,7 @@
       (mpv-command "keybind" "q" "stop")
       ;; Default 's' action is to take a screenshot, but pea can't guarantee write access. Stop instead.
       (mpv-command "keybind" "s" "stop")
-      (register-mpv-event-handler
-        (lambda (eid)
-          ;; Translate MPV relevant events to PEA events then send to callback function.
-          (cond
-            [(= eid (mpv-event-type metadata-update))
-             (cb `(TAGS ,(mpv-get-property/node "metadata")))]
-            [(= eid (mpv-event-type idle))
-             (cb '(STOPPED))]
-            [(or
-               (= eid (mpv-event-type playback-restart))
-               (= eid 13))		; deprecated: MPV_EVENT_UNPAUSE
-             (cb '(PLAYING))]
-            ;; TODO get pause/unpause info via mpv_observe_property as these events are deprecated.
-            [(= eid 12)		; deprecated: MPV_EVENT_PAUSE
-             (cb '(PAUSED))]
-            ;; ignore these events.
-            [(or
-               (= eid (mpv-event-type start-file))
-               (= eid (mpv-event-type end-file))
-               (= eid (mpv-event-type audio-reconfig))
-               (= eid (mpv-event-type file-loaded))
-               (= eid 9)	; deprecated: MPV_EVENT_TRACKS_CHANGED
-               )
-             (if #f #f)]
-            ;; log unknown events.
-            [else
-              (cb `(MPV ,eid ,(mpv-event-name eid)))])
-          ))
+      (register-mpv-event-handler (make-mpv-event-handler cb))
       ))
 
   (define mpv-play
@@ -95,4 +68,57 @@
   (define mpv-stop
     (lambda ()
       (mpv-command "stop")))
+
+  (define make-mpv-event-handler
+    (lambda (cb)
+      ;; Define our own property event IDs for things that need to be watched.
+      (define tags-id 1)
+      (define time-pos-id 2)
+      (define pause-id 3)
+
+      ;; handler: translate MPV relevant events to PEA events then return via callback function.
+      (lambda (event)
+        (define eid (mpv-event-id event))
+        (cond
+          [(mpv-property-event? event)
+           (let ([pid (mpv-event-reply-userdata event)])
+             (cond
+               [(= pid time-pos-id)
+                (cb `(POS ,(mpv-property-event-value event)))]
+               [(= pid tags-id)
+                (cb `(TAGS ,(mpv-property-event-value event)))]
+               [(= pid pause-id)
+                (cb (if (mpv-property-event-value event)
+                        '(PAUSED)
+                        '(PLAYING)))]
+               [else
+                 (display "property-change: ")(display (mpv-property-event-name event))
+                 (display " -> ")
+                 (display (mpv-property-event-value event))(newline)]))]
+          [(= eid (mpv-event-type end-file))
+           (mpv-unobserve-property pause-id)
+           (mpv-unobserve-property tags-id)
+           (mpv-unobserve-property time-pos-id)]
+          [(= eid (mpv-event-type idle))
+           (cb '(STOPPED))]
+          [(= eid (mpv-event-type playback-restart))
+           (cb '(PLAYING))]
+          [(= eid (mpv-event-type file-loaded))
+           (mpv-observe-property tags-id "metadata" (mpv-format node))
+           (mpv-observe-property pause-id "pause" (mpv-format flag))
+           (mpv-observe-property time-pos-id "time-pos" (mpv-format int64))]
+          ;; ignore these events.
+          [(or
+             (= eid (mpv-event-type start-file))
+             (= eid (mpv-event-type audio-reconfig))
+             (= eid (mpv-event-deprecated pause))
+             (= eid (mpv-event-deprecated unpause))
+             (= eid (mpv-event-deprecated tracks-changed))
+             (= eid (mpv-event-deprecated metadata-update))
+             )
+           (if #f #f)]
+          ;; log unknown events.
+          [else
+            (cb `(MPV ,eid ,(mpv-event-name eid)))])
+        )))
   )
