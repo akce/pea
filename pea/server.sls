@@ -223,14 +223,28 @@
                  [t (list-ref (vfs-tracks vfs) i)])
             `(I ,i ,(vfs-vpath vfs) (,(track-title t) ,(track-type t))))))
 
-      ;; AHOJ Notifies any watching clients that this server is now up.
-      (let ([msg '(AHOJ "pea: i live again...")])
-        (write-now msg mcast))
+      ;; [proc] play-another: attempt to play the next song in the current playlist.
+      ;; [return] result of (controller play!) or #f if nothing left in playlist.
+      (define play-another
+        (lambda ()
+          (case state
+            [(PLAYING)	; current mode is to keep playing, so try and move to the next track.
+             (case (controller '(move! 1))
+               [(ACK)
+                ;; TODO for upcoming VIDEO tracks, announce the title, and set a timer before playing.
+                (set! state (pea-state STOPPED))	; set STOPPED as play! currently requires it.
+                (controller 'play!)]
+               [else
+                 ;; Nothing more in the playlist.
+                 ;; HMMM should cursor move to position 0 before stopping?
+                 #f])]
+            [else
+              #f])))
 
       ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
       ;; The controller function itself.
       ;; It's really just a state transition table.
-      (lambda (input)
+      (define (controller input)
         ;; List these commands in alphabetic order within their groupings.
         (case (command input)
           ;;;; Player commands.
@@ -299,7 +313,8 @@
 
           ;;;; Player change state commands. Multicast them.
           [(STOPPED)
-           (state-set! (pea-state STOPPED))]
+           (unless (play-another)
+             (state-set! (pea-state STOPPED)))]
           [(PLAYING)
            (state-set! (pea-state PLAYING))]
           [(PAUSED)
@@ -313,7 +328,12 @@
 
           ;; HMMM add a help command?
           [else
-            'eh?]))))
+            'eh?]))
+
+      ;; AHOJ Notifies any watching clients that this server is now up.
+      (write-now '(AHOJ "pea: i live again...") mcast)
+
+      controller))
 
   ;; [proc] make-ui-track-list: return current playlist tracks with info that a UI would find useful.
   ;; ie,
