@@ -22,9 +22,7 @@
 (library
   (pea server)
   (export
-    init
-    run
-    )
+    make-pea-server)
   (import
     (rnrs)
     (only (chezscheme) display-condition)
@@ -37,85 +35,67 @@
     (socket extended)
     )
 
-  ;; PEA states follow a simple pattern:
-  ;; - client requests player enter a state,
-  ;; - player callback informs on new state.
-  ;;
-  ;; Allowed state transitions:
-  ;; (PAUSED | PLAYING) + STOP -> STOPPED
-  ;; (STOPPED) + PLAY -> PLAYING
-  ;; (PLAYING) + PAUSE -> PAUSED
-  ;;
-  ;; Using define-enum here to help catch mis-typed symbols, but probably not needed in the long term.
-  (define-enum state
-    [PAUSE	'PAUSE]		; Client requested pause.
-    [PLAY	'PLAY]		; Client requested play.
-    [STOP	'STOP]		; Client requested stop.
-    [PAUSED	'PAUSED]	; Player state PAUSED.
-    [PLAYING	'PLAYING]	; Player state PLAYING.
-    [STOPPED	'STOPPED]	; Played state STOPPED.
-    )
-
-  (define-record-type pea
+  (define-record-type model
     (fields
       [immutable	vfs]
-      [immutable	cursor]
-      [immutable	ctrl]		; control socket.
-      [immutable	mcast-sock]	; multi-cast socket.
-      [immutable	mcast-port]	; multi-cast port.
-      [mutable		state]		; pea state. ie, (state *).
-      )
+      [immutable	cursor])
     (protocol
       (lambda (new)
-        (lambda (vfs cursor ctrl mcast)
-          (let ([mcast-port (socket->port mcast)])
-            (new vfs cursor ctrl mcast mcast-port (state STOPPED)))))))
+        (lambda (root-playlist-path vfs-state-file)
+          (let ([vfs (make-vfs root-playlist-path)])
+            (new vfs (make-cursor vfs vfs-state-file)))))))
 
-  (define init
+  (define make-pea-server
     (lambda (root-playlist-path state-file ctrl-node ctrl-service mcast-node mcast-service)
       (my
-        [vfs	(make-vfs root-playlist-path)]
-        [cursor	(make-cursor vfs state-file)]
-        [ctrl	(connect-server-socket
-                  ctrl-node ctrl-service
-                  (address-family inet) (socket-domain stream)
-                  (address-info all numerichost passive) (ip-protocol tcp))]
-        [mcast	(connect-client-socket
-                  mcast-node mcast-service
-                  (address-family inet) (socket-domain datagram)
-                  (address-info all numerichost)
-                  (ip-protocol udp))]
-        [pea	(make-pea vfs cursor ctrl mcast)])
+        [controller (make-controller
+                      (make-model root-playlist-path state-file)
+                      (socket->port
+                        (connect-client-socket
+                          mcast-node mcast-service
+                          (address-family inet) (socket-domain datagram)
+                          (address-info all numerichost)
+                          (ip-protocol udp))))]
+        [ctrl-sock	(connect-server-socket
+                          ctrl-node ctrl-service
+                          (address-family inet) (socket-domain stream)
+                          (address-info all numerichost passive) (ip-protocol tcp))])
 
       ;; Handle stdin commands. ie, server exit.
-      (ev-io 0 (evmask 'READ) (make-stdin-reader pea))
+      (ev-io 0 (evmask 'READ) (make-stdin-reader controller))
 
       ;; Create the Control socket event watcher.
-      (ev-io (socket-fd (pea-ctrl pea)) (evmask 'READ) (make-control-server pea))
+      (ev-io (socket-fd ctrl-sock) (evmask 'READ) (make-control-server controller ctrl-sock))
 
-      (init-player (make-player-event-handler pea))
-      pea))
+      (init-player controller)
 
+      ;; return the runner!
+      (lambda ()
+        (ev-run))))
+
+  ;; [proc] make-control-server: create a socket listener function for use as an ev-io watcher.
+  ;; It's only purpose is to create client watchers as they connect.
   (define make-control-server
-    (lambda (pea)
+    (lambda (controller ctrl-sock)
       (lambda (w revent)
         ;; This function is called when there's read activity on the Control socket.
         ;; ie, when a client is ready to connect.
-        ;; TODO add abstraction for all of client-* to (socket extended)?
-        (let ([client-sock (socket-accept (pea-ctrl pea))])
-          ;; Create the client socket event watcher.
-          (ev-io (socket-fd client-sock) (evmask 'READ) (make-control-client pea client-sock))
+        ;; HMMM add abstraction for all of client-* to (socket extended)?
+        (let ([client-sock (socket-accept ctrl-sock)])
+          ;; Create the client connect event watcher.
+          (ev-io (socket-fd client-sock) (evmask 'READ) (make-control-client controller client-sock))
           ;; TODO show client address.
           (display "new client ")(display (socket-fd client-sock))(newline)))))
 
+  ;; [proc] make-control-client: makes a control client function suitable for use as an ev-io watcher.
   (define make-control-client
-    (lambda (pea client-sock)
+    (lambda (controller client-sock)
       ;; The control client will read commands, action them, and respond.
       (my
-        [client-port		(socket->port client-sock)]
-        [input-processor	(make-input-processor pea)])
+        [client-port	(socket->port client-sock)])
       ;; Return a welcome message.
-      (write-now '(MESSAGE "Welcome to PEA! :)") client-port)
+      (write-now '(AHOJ "Control connection established, welcome to PEA! :)") client-port)
+      ;; TODO unicast current state, so UIs can immediately draw themselves.
 
       (lambda (w revent)
         ;; WARNING: Using 'read' here assumes that clients are well behaved and send fully formed sexprs.
@@ -131,90 +111,207 @@
              (close-port client-port)]
             [else
               ;; process command.
-              (display "client command: ")(display input)(newline)
+              ;;(display "client command: ")(display input)(newline)
               (guard
+                ;; TODO coding errors need to drop into debugger rather than report and continue.
                 (e [else
                      ;; TODO define condition->string such that string quotes are escaped..
                      ;; TODO then do some proper server logging..
                      (display-condition e)
                      ;; TODO and then define a client message type.
-                     (display-condition e client-port)])
-                (write (input-processor input) client-port))
-              (flush-output-port client-port)])))))
+                     (display-condition e client-port)
+                     (flush-output-port client-port)])
+                (let ([msg (controller input)])
+                  (when msg
+                    (write-now msg client-port))))])))))
 
-  (define make-input-processor
-    (lambda (pea)
+  ;; PEA states follow a simple pattern:
+  ;; - client requests player enter a state,
+  ;; - player callback informs on new state.
+  ;;
+  ;; Allowed state transitions:
+  ;; (PAUSED | PLAYING) + STOP -> STOPPED
+  ;; (STOPPED) + PLAY -> PLAYING
+  ;; (PLAYING) + PAUSE -> PAUSED
+  ;;
+  ;; Using define-enum here to help catch mis-typed symbols, but probably not needed in the long term.
+  (define-enum pea-state
+    ;; Intermediate, client requested states. These are internal and not multicast.
+    [PAUSE	'PAUSE]		; Client requested pause.
+    [PLAY	'PLAY]		; Client requested play.
+    [STOP	'STOP]		; Client requested stop.
+    ;; End player states.
+    [PAUSED	'PAUSED]	; Player state PAUSED.
+    [PLAYING	'PLAYING]	; Player state PLAYING.
+    [STOPPED	'STOPPED]	; Played state STOPPED.
+    )
+
+  ;; [proc] make-controller: creates the main controller function.
+  ;; [return] controller function.
+  ;;
+  ;; 'model' is the global pea data.
+  ;; 'mcast' is the multicast *text* port through which global messages are sent.
+  ;;
+  ;; eg,
+  ;; > (define controller (make-controller pea-model multicast-port))
+  ;;
+  ;; The controller handles state transitions and drives the media player.
+  ;;
+  ;; It's also responsible for sending all multicast messages. These multicast messages usually
+  ;; indicate changes to global state and/or informational messages that all clients should be aware of.
+  ;;
+  ;; The returned controller function will take one input argument.
+  ;; ie, the command and its arguments (if any).
+  ;;
+  ;; The format for this input must be a list or a symbol.
+  ;;
+  ;; eg, To start play:
+  ;; > (controller 'play!)
+  ;;
+  ;; Unit commands may also be passed in within a list:
+  ;; > (controller '(play!))
+  ;;
+  ;; A command with argument, cursor move:
+  ;; > (controller '(move! 1))
+  (define make-controller
+    (lambda (model mcast)
       (my
-        [cursor	(pea-cursor pea)]
-        [vfs	(pea-vfs pea)]
-        [mcast	(pea-mcast-port pea)])
+        ;; accessors for convenience.
+        [cursor	(model-cursor model)]
+        [vfs	(model-vfs model)]
+        ;; assume initial pea state is stopped.
+        [state	(pea-state STOPPED)])
 
+      ;; [proc] command: sanitise 1st arg (if any) of input.
+      (define command
+        (lambda (input)
+          (cond
+            [(null? input)
+             'EMPTY]
+            [(list? input)
+             (car input)]
+            [else
+              input])))
+
+      ;; [proc] arg: get first argument.
+      ;; HMMM check return type is singleton?
+      (define arg
+        (lambda (input)
+          (cadr input)))
+
+      ;; [proc] ack-mcast: Multicasts message and returns ACK to caller (ie, client).
+      (define ack-mcast
+        (lambda (msg)
+          (write-now msg mcast)
+          'ACK))
+
+      ;; [proc] state-set!: Changes PEA state, and multicasts it.
+      ;; This is called only from the player callback messages as these are end states
+      ;; (not intermediate request states) and as such need to be multicast to listening clients.
+      (define state-set!
+        (lambda (new-state)
+          (unless (eq? state new-state)
+            (set! state new-state)
+            (write-now `(STATE ,new-state) mcast))))
+
+      ;; [proc] make-i: make current i (cursor index position track-info).
+      ;; [return] (I index vpath current-track-title current-track-type)
+      ;; Do not send track record as scheme readers need to understand (import) the track record def.
+      (define make-i
+        (lambda ()
+          (let* ([i (cursor-index cursor)]
+                 [t (list-ref (vfs-tracks vfs) i)])
+            `(I ,i ,(vfs-vpath vfs) (,(track-title t) ,(track-type t))))))
+
+      ;; AHOJ Notifies any watching clients that this server is now up.
+      (let ([msg '(AHOJ "pea: i live again...")])
+        (write-now msg mcast))
+
+      ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+      ;; The controller function itself.
+      ;; It's really just a state transition table.
       (lambda (input)
-        (my
-          ;; sanitise 1st arg (if any) of input.
-          [command (lambda ()
-                     (cond
-                       [(null? input)
-                        'EMPTY]
-                       [(list? input)
-                        (car input)]
-                       [else
-                         input]))]
-          [arg (lambda ()
-                 (cadr input))])
-
         ;; List these commands in alphabetic order within their groupings.
-        (case (command)
+        (case (command input)
           ;;;; Player commands.
           [(play!)
            ;; For now, only allow PLAY from STOPPED state. In future, play might be able to interrupt
            ;; any state to re-start or resume play or play from a new cursor position.
-           (case (pea-state pea)
+           (case state
              [(STOPPED)
-              (pea-state-set! pea (state PLAY))
+              (set! state (pea-state PLAY))
+              ;; TODO check that play actually works.
               (play (list-ref (vfs-tracks vfs) (cursor-index cursor))
                     (vfs-current vfs))
-              (cursor-save cursor)])]
-          [(stop!)
-           (case (pea-state pea)
-             [(PLAY PLAYING PAUSING PAUSED)
-              (pea-state-set! pea (state STOP))
-              (stop)])]
-          [(toggle!)	; as in toggle pause.
-           (case (pea-state pea)
-             [(STOP STOPPED)
-              (if #f #f)]
+              (cursor-save cursor)
+              'ACK]
              [else
-               (toggle-pause)])]
+               `(DOH "Can only play! from STOPPED state. Current state" ,state)])]
+          [(stop!)
+           (case state
+             [(PLAY PLAYING PAUSING PAUSED)
+              (set! state (pea-state STOP))
+              (stop)
+              'ACK]
+             [else
+               `(DOH "Cannot stop! from current state" ,state)])]
+          [(toggle!)	; as in toggle pause.
+           (case state
+             [(STOP STOPPED)
+              `(DOH "Cannot toggle! pause from current state" ,state)]
+             [else
+               (toggle-pause)
+               'ACK])]
+
           ;;;; VFS navigation.
           [(enter!)
            ;; Ensure enter! then sync!
            (let* ([vpath (vfs-enter! vfs (cursor-index cursor))]
                   [pos (cursor-sync! cursor)])
-             (write-now `(VPATH ,pos ,vpath) mcast))
-           (cursor-save cursor)]
+             (cursor-save cursor)
+             (ack-mcast `(VPATH ,pos ,vpath)))]
           [(move!)
            ;; Only signal if there was a change of position.
-           (let ([new-pos (cursor-move! cursor (arg))])
+           (let ([new-pos (cursor-move! cursor (arg input))])
              (if new-pos
-                 (write-now `(POS ,new-pos) mcast)))]
+                 (ack-mcast (make-i))
+                 '(DOH "move! cursor unchanged")))]
           [(pop!)
            ;; Ensure pop! then sync!
            (let* ([vpath (vfs-pop! vfs)]
                   [pos (cursor-sync! cursor)])
-             (write-now `(VPATH ,pos ,vpath) mcast))]
-          [(pos)
-           (cursor-index cursor)]
+             (ack-mcast `(VPATH ,pos ,vpath)))]
           [(root!)
            ;; Ensure root! then sync!
            (let* ([vpath (vfs-root! vfs)]
                   [pos (cursor-sync! cursor)])
-             (write-now `(VPATH ,pos ,vpath) mcast))]
+             (ack-mcast `(VPATH ,pos ,vpath)))]
+          ;; Server quit. Note the double exclamations: this is an important command!!
+          [(quit!!)
+           (ev-break (evbreak 'ALL))
+           (ack-mcast '(BYE "server end: goodbye"))]
+
+          ;;;; Client query commands.
+          [(i)		; current position info: including vpath and track.
+           (make-i)]
           [(tracks)
            (make-ui-track-list vfs)]
-          [(vpath)	; get current vpath
-           (vfs-vpath vfs)]
-          ;; TODO add a help command?
+
+          ;;;; Player change state commands. Multicast them.
+          [(STOPPED)
+           (state-set! (pea-state STOPPED))]
+          [(PLAYING)
+           (state-set! (pea-state PLAYING))]
+          [(PAUSED)
+           (state-set! (pea-state PAUSED))]
+          [(UNPAUSED)
+           (state-set! (pea-state PLAYING))]
+
+          ;;;; Player informational messages. Multicast them.
+          [(POS TAGS MPV)
+           (write-now input mcast)]
+
+          ;; HMMM add a help command?
           [else
             'eh?]))))
 
@@ -223,70 +320,32 @@
   ;; '(TRACKS (("title-string" . TYPE) ...))
   (define make-ui-track-list
     (lambda (vfs)
-      (list 'TRACKS
-        (map
-          (lambda (t)
-            (cons (track-title t) (track-type t)))
-          (vfs-tracks vfs)))))
-
-  (define run
-    (lambda (pea)
-      (let ([msg '(MESSAGE "pea: i live again...")])
-        (display (cadr msg))(newline)
-        (write-now msg (pea-mcast-port pea)))
-      (ev-run)))
+      `(TRACKS
+         ,(map
+            (lambda (t)
+              (cons (track-title t) (track-type t)))
+            (vfs-tracks vfs)))))
 
   (define make-stdin-reader
-    (lambda (pea)
+    (lambda (controller)
       (lambda (w revent)
         (let ([in (read (current-input-port))])
           (cond
             [(eof-object? in)
-             (let ([msg '(MESSAGE "server end: goodbye")])
-               (display (cadr msg))(newline)
-               (write-now msg (pea-mcast-port pea)))
              (ev-io-stop w)
-             (ev-break (evbreak 'ALL))]
-             ;; TODO add some server console control commands?
-             )))))
+             ;; translate EOF to quit command.
+             (controller 'quit!!)]
+            [else
+              ;; Allow server console control commands.
+              ;; TODO use same exception handling from make-control-client.
+              (let ([msg (controller in)])
+                (when msg
+                  (write-now msg (current-output-port))))])))))
 
   ;; [proc] socket->port: shortcut for creating a text port from a binary socket
   (define socket->port
     (lambda (sock)
       (transcoded-port (socket-input/output-port sock) (native-transcoder))))
-
-  ;; [proc] make-player-event-handler: player state change callback.
-  (define make-player-event-handler
-    (lambda (pea)
-      (lambda (msg)
-        ;; Certain messages, eg state changes, require action within pea and may need to be translated.
-        (let ([xmsg (case (car msg)
-                      [(STOPPED)
-                       (pea-state-set! pea (state STOPPED))
-                       '(STATE STOPPED)]
-                      [(PLAYING)
-                       (if (eq? (pea-state pea) (state PLAYING))
-                           #f
-                           (begin
-                             (pea-state-set! pea (state PLAYING))
-                             '(STATE PLAYING)))]
-                      [(PAUSED)
-                       (if (eq? (pea-state pea) (state PAUSED))
-                           #f
-                           (begin
-                             (pea-state-set! pea (state PAUSED))
-                             '(STATE PAUSED)))]
-                      [(UNPAUSED)
-                       (if (eq? (pea-state pea) (state PLAYING))
-                           #f
-                           (begin
-                             (pea-state-set! pea (state PLAYING))
-                             '(STATE PLAYING)))]
-                      [else
-                        msg])])
-          (when xmsg
-            (display xmsg)(newline)
-            (write-now xmsg (pea-mcast-port pea)))))))
 
   ;; [proc] write-now: write message and flush port.
   ;; If I had a dollar for the number of times i've forgotten to flush after write....

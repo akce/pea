@@ -18,8 +18,8 @@
     )
 
   (define init-player
-    (lambda (cb)
-      (mpv-init cb)))
+    (lambda (controller)
+      (mpv-init controller)))
 
   (define play
     (lambda (track parent)
@@ -42,7 +42,7 @@
       (mpv-stop)))
 
   (define mpv-init
-    (lambda (cb)
+    (lambda (controller)
       (mpv-create)
       (mpv-set-property "audio-display" #f)	; disable mpv embedded coverart display. 
       ;; Turn on keyboard input for videos.
@@ -54,7 +54,7 @@
       (mpv-command "keybind" "q" "stop")
       ;; Default 's' action is to take a screenshot, but pea can't guarantee write access. Stop instead.
       (mpv-command "keybind" "s" "stop")
-      (register-mpv-event-handler (make-mpv-event-handler cb))
+      (register-mpv-event-handler (make-mpv-event-handler controller))
       ))
 
   (define mpv-play
@@ -70,7 +70,7 @@
       (mpv-command "stop")))
 
   (define make-mpv-event-handler
-    (lambda (cb)
+    (lambda (controller)
       ;; Define our own property event IDs for things that need to be watched.
       (define tags-id 1)
       (define time-pos-id 2)
@@ -84,25 +84,25 @@
            (let ([pid (mpv-event-reply-userdata event)])
              (cond
                [(= pid time-pos-id)
-                (cb `(POS ,(mpv-property-event-value event)))]
+                (controller `(POS ,(mpv-property-event-value event)))]
                [(= pid tags-id)
-                (cb `(TAGS ,(mpv-property-event-value event)))]
+                (controller `(TAGS ,(mpv-property-event-value event)))]
                [(= pid pause-id)
-                (cb (if (mpv-property-event-value event)
-                        '(PAUSED)
-                        '(PLAYING)))]
+                (controller (if (mpv-property-event-value event)
+                                '(PAUSED)
+                                '(PLAYING)))]
                [else
-                 (display "property-change: ")(display (mpv-property-event-name event))
-                 (display " -> ")
-                 (display (mpv-property-event-value event))(newline)]))]
+                 `(MPV "property-change"
+                       ,(mpv-property-event-name event)
+                       ,(mpv-property-event-value event))]))]
           [(= eid (mpv-event-type end-file))
            (mpv-unobserve-property pause-id)
            (mpv-unobserve-property tags-id)
            (mpv-unobserve-property time-pos-id)]
           [(= eid (mpv-event-type idle))
-           (cb '(STOPPED))]
+           (controller '(STOPPED))]
           [(= eid (mpv-event-type playback-restart))
-           (cb '(PLAYING))]
+           (controller '(PLAYING))]
           [(= eid (mpv-event-type file-loaded))
            (mpv-observe-property tags-id "metadata" (mpv-format node))
            (mpv-observe-property pause-id "pause" (mpv-format flag))
@@ -119,6 +119,6 @@
            (if #f #f)]
           ;; log unknown events.
           [else
-            (cb `(MPV ,eid ,(mpv-event-name eid)))])
+            (controller `(MPV ,eid ,(mpv-event-name eid)))])
         )))
   )
