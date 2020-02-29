@@ -118,7 +118,9 @@
            (controller `(MPV ,last-pos ,duration))
            (when (and
                    (number? duration)
-                   (< last-pos duration))
+                   ;; Sometimes the last second won't get a time-pos event so lower duration by one.
+                   ;; This means that pressing stop in the last second won't stop continuous play.
+                   (< last-pos (- duration 1)))
              ;; Assume that play was manually stopped so generate a fake stop! command otherwise
              ;; continuous play would just keep going.
              ;; This is safe to do as mpv-stop won't send another idle at this point.
