@@ -332,16 +332,8 @@
 
           ;;;; Player change state commands. Multicast them.
           [(STOPPED)
-           ;; STOPPED now takes an argument: REASON.
-           ;; EOF means play stopped due to reaching the end of the track. Play could continue to next
-           ;; track in continuous play mode.
-           ;; Anything else means to end play now.
-           ;; REASON was added as mpv won't generate an event when 'stop' is used in the video play screen
-           ;; and pea needs to know if it should actually stop or play the next track.
-           ;; HMMM instead of adding a REASON, have the mpv driver fake a (stop!) command first?
-           (unless (and (eq? (arg input) 'EOF) (play-another))
-             (set! state (pea-state STOPPED))
-             (write-now `(,(pea-state STOPPED) ,(cdr input)) mcast))]
+           (unless (play-another)
+             (state-set! (pea-state STOPPED)))]
           [(PLAYING)
            (state-set! (pea-state PLAYING))]
           [(PAUSED)

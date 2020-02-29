@@ -114,13 +114,16 @@
            (mpv-unobserve-property tags-id)
            (mpv-unobserve-property time-pos-id)]
           [(= eid (mpv-event-type idle))
-           (controller `(STOPPED
-                          ,(cond
-                             ;; guess the reason for going idle (stopping).
-                             [(boolean? duration)	'STREAM]
-                             [(>= last-pos duration)	'EOF]	; last-pos can be > duration due to seeks.
-                             [else			'USER])
-                          ,last-pos ,duration))]
+           ;; guess the reason for going idle (stopping).
+           (controller `(MPV ,last-pos ,duration))
+           (when (and
+                   (number? duration)
+                   (< last-pos duration))
+             ;; Assume that play was manually stopped so generate a fake stop! command otherwise
+             ;; continuous play would just keep going.
+             ;; This is safe to do as mpv-stop won't send another idle at this point.
+             (controller 'stop!))
+           (controller 'STOPPED)]
           [(= eid (mpv-event-type playback-restart))
            (controller '(PLAYING))]
           [(= eid (mpv-event-type file-loaded))
