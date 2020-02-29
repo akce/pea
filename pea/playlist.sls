@@ -44,19 +44,19 @@
         (make-track uri "/" (uri-media-type uri)))))
 
   (define make-playlist-track
-    (lambda (parent-track entry-path . title)
+    (lambda (parent-track entry-path title)
       (let* ([uri (make-uri entry-path)]
              [type (uri-media-type uri (track-uri parent-track))])
         (make-track
           uri
-          ;; Set the title to last part of the path if title isn't given.
-          (if (or (null? title) title)
+          (if title
+              title
+              ;; Set the title to last part of the path if title isn't given.
               (if (eq? type 'DIR)
                   ;; Directories can be very freeform so use the entire dirname.
                   (path-last entry-path)
                   ;; Otherwise files have the extension lopped off.
-                  (path-root (path-last entry-path)))
-              (car title))
+                  (path-root (path-last entry-path))))
           ;; Add parent-track URI so that full path is available in case of file system stat.
           type))))
 
@@ -95,7 +95,8 @@
         track-type
         (map
           (lambda (entry)
-            (make-playlist-track track entry))
+            ;; File listings never provide a track title.
+            (make-playlist-track track entry #f))
           ;; TODO make the sort comparison function configurable.
           (list-sort string-ci<? (directory-list (uri->string (track-uri track))))))))
 
