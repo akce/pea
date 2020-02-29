@@ -75,6 +75,15 @@
       (define tags-id 1)
       (define time-pos-id 2)
       (define pause-id 3)
+      ;; last-pos & duration are used to guess if 'stop' was selected during video playback.
+      ;; This is a workaround for mpv not generating a specific user-selected-stop event and my
+      ;; not being able to find a specific event to watch for.
+      ;; NB: eof-reached does not trigger as pea needs in keep-open mode and the end-file event
+      ;; NB: seems to behave more like a file-closed event.
+      ;; An alternate, and much more involved solution, would be to render the video into a pea controlled
+      ;; window and have pea handle key input itself. But that's a lot more work...
+      (define last-pos 0)
+      (define duration #f)
 
       ;; handler: translate MPV relevant events to PEA events then return via callback function.
       (lambda (event)
@@ -84,7 +93,12 @@
            (let ([pid (mpv-event-reply-userdata event)])
              (cond
                [(= pid time-pos-id)
-                (controller `(POS ,(mpv-property-event-value event)))]
+                ;; #f time-pos is still occassionally seen at end of track playback.
+                ;; Only pass real position values to the controller.
+                (let ([pos (mpv-property-event-value event)])
+                  (when pos
+                    (set! last-pos pos)
+                    (controller `(POS ,pos))))]
                [(= pid tags-id)
                 (controller `(TAGS ,(mpv-property-event-value event)))]
                [(= pid pause-id)
@@ -100,17 +114,30 @@
            (mpv-unobserve-property tags-id)
            (mpv-unobserve-property time-pos-id)]
           [(= eid (mpv-event-type idle))
-           (controller '(STOPPED))]
+           (controller `(STOPPED
+                          ,(cond
+                             ;; guess the reason for going idle (stopping).
+                             [(boolean? duration)	'STREAM]
+                             [(>= last-pos duration)	'EOF]	; last-pos can be > duration due to seeks.
+                             [else			'USER])
+                          ,last-pos ,duration))]
           [(= eid (mpv-event-type playback-restart))
            (controller '(PLAYING))]
           [(= eid (mpv-event-type file-loaded))
+           ;; reset duration.
+           ;; NB: streams like ice-cast radio stations don't have duration so set them to #f.
+           (set! duration
+             (guard (e [else #f])
+               (mpv-get-property/long "duration")))
            (mpv-observe-property tags-id "metadata" (mpv-format node))
            (mpv-observe-property pause-id "pause" (mpv-format flag))
-           (mpv-observe-property time-pos-id "time-pos" (mpv-format int64))]
+           (mpv-observe-property time-pos-id "time-pos" (mpv-format int64))
+           (controller `(LEN ,duration))]
           ;; ignore these events.
           [(or
              (= eid (mpv-event-type start-file))
              (= eid (mpv-event-type audio-reconfig))
+             (= eid (mpv-event-type video-reconfig))
              (= eid (mpv-event-deprecated pause))
              (= eid (mpv-event-deprecated unpause))
              (= eid (mpv-event-deprecated tracks-changed))

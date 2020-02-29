@@ -180,7 +180,10 @@
         [cursor	(model-cursor model)]
         [vfs	(model-vfs model)]
         ;; assume initial pea state is stopped.
-        [state	(pea-state STOPPED)])
+        [state	(pea-state STOPPED)]
+        ;; timer used to announce upcoming video before playing.
+        [announce-timer #f]	; HMMM always create the timer, and just re-arm as needed?
+        [announce-delay 5])
 
       ;; [proc] command: sanitise 1st arg (if any) of input.
       (define command
@@ -231,9 +234,22 @@
             [(PLAYING)	; current mode is to keep playing, so try and move to the next track.
              (case (controller '(move! 1))
                [(ACK)
-                ;; TODO for upcoming VIDEO tracks, announce the title, and set a timer before playing.
                 (set! state (pea-state STOPPED))	; set STOPPED as play! currently requires it.
-                (controller 'play!)]
+                (let ([t (list-ref (vfs-tracks vfs) (cursor-index cursor))])
+                  (case (track-type t)
+                    [(VIDEO)
+                     ;; For upcoming VIDEO tracks, announce the title, and set a timer before playing.
+                     ;; HMMM should there be an ANNOUNCE state?
+                     (write-now `(ANNOUNCE ,announce-delay "Upcoming video" ,(track-title t)) mcast)
+                     (set! announce-timer
+                       (ev-timer announce-delay 0
+                                 (lambda (timer i)
+                                   (set! announce-timer #f)
+                                   (controller 'play!))))
+                     ]
+                    [else
+                      ;; Otherwise, play immediately.
+                      (controller 'play!)]))]
                [else
                  ;; Nothing more in the playlist.
                  ;; HMMM should cursor move to position 0 before stopping?
@@ -265,6 +281,9 @@
            (case state
              [(PLAY PLAYING PAUSING PAUSED)
               (set! state (pea-state STOP))
+              (when announce-timer
+                (ev-timer-stop announce-timer)
+                (set! announce-timer #f))
               (stop)
               'ACK]
              [else
@@ -313,8 +332,16 @@
 
           ;;;; Player change state commands. Multicast them.
           [(STOPPED)
-           (unless (play-another)
-             (state-set! (pea-state STOPPED)))]
+           ;; STOPPED now takes an argument: REASON.
+           ;; EOF means play stopped due to reaching the end of the track. Play could continue to next
+           ;; track in continuous play mode.
+           ;; Anything else means to end play now.
+           ;; REASON was added as mpv won't generate an event when 'stop' is used in the video play screen
+           ;; and pea needs to know if it should actually stop or play the next track.
+           ;; HMMM instead of adding a REASON, have the mpv driver fake a (stop!) command first?
+           (unless (and (eq? (arg input) 'EOF) (play-another))
+             (set! state (pea-state STOPPED))
+             (write-now `(,(pea-state STOPPED) ,(cdr input)) mcast))]
           [(PLAYING)
            (state-set! (pea-state PLAYING))]
           [(PAUSED)
@@ -323,7 +350,7 @@
            (state-set! (pea-state PLAYING))]
 
           ;;;; Player informational messages. Multicast them.
-          [(POS TAGS MPV)
+          [(LEN POS TAGS MPV)
            (write-now input mcast)]
 
           ;; HMMM add a help command?
