@@ -1,15 +1,10 @@
 (library (pea player)
   (export
-    init-player
-    play
-    toggle-pause
-    stop
-
-    mpv-init
-    mpv-play
-    )
+    make-player)
   (import
     (rnrs)
+    (only (chezscheme) machine-type)
+    (pea omxplayer)
     (pea path)
     (pea playlist)
     (pea util)
@@ -17,29 +12,38 @@
     (mpv ev)
     )
 
-  (define init-player
+  (define make-player
     (lambda (controller)
-      (mpv-init controller)))
+      ;; mpv is always used for AUDIO, and for VIDEO on non-raspberry pi machines.
+      (define mpv-player (mpv-init controller))
+      (define audio-player mpv-player)
 
-  (define play
-    (lambda (track parent)
-      (my
-        [full-path	(track-join-path parent track)])
-      (case (track-type track)
-        [(AUDIO VIDEO)
-         (mpv-play (uri->string (track-uri full-path)))]
-        [else
-          #f]
-        )
-      ))
+      (define video-player
+        (case (machine-type)
+          ;; assume that ARM is a Raspberry PI.
+          [(arm32le)
+           (make-omxplayer controller)]
+          [else
+            mpv-player]))
 
-  (define toggle-pause
-    (lambda ()
-      (mpv-toggle-pause)))
+      (define current-player #f)
 
-  (define stop
-    (lambda ()
-      (mpv-stop)))
+      (lambda input
+        (case (car input)
+          [(play!)
+           ;; arg[1] == fully resolvable path to track.
+           (let ([track (cadr input)])
+             (set! current-player
+               (case (track-type track)
+                 [(AUDIO)
+                  audio-player]
+                 [(VIDEO)
+                  video-player]
+                 [else
+                   (error 'player "cannot play! unsupported track type" track)]))
+             (current-player 'play! (uri->string (track-uri track))))]
+          [else
+           (apply current-player input)]))))
 
   (define mpv-init
     (lambda (controller)
@@ -55,19 +59,14 @@
       ;; Default 's' action is to take a screenshot, but pea can't guarantee write access. Stop instead.
       (mpv-command "keybind" "s" "stop")
       (register-mpv-event-handler (make-mpv-event-handler controller))
-      ))
-
-  (define mpv-play
-    (lambda (file-or-url)
-      (mpv-command "loadfile" file-or-url)))
-
-  (define mpv-toggle-pause
-    (lambda ()
-      (mpv-command "cycle" "pause")))
-
-  (define mpv-stop
-    (lambda ()
-      (mpv-command "stop")))
+      (lambda input
+        (case (car input)
+          [(play!)
+           (mpv-command "loadfile" (cadr input))]
+          [(toggle!)
+           (mpv-command "cycle" "pause")]
+          [(stop!)
+           (mpv-command "stop")]))))
 
   (define make-mpv-event-handler
     (lambda (controller)

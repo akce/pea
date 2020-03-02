@@ -67,7 +67,8 @@
       ;; Create the Control socket event watcher.
       (ev-io (socket-fd ctrl-sock) (evmask 'READ) (make-control-server controller ctrl-sock))
 
-      (init-player controller)
+      ;; Create the media player.
+      (controller `(set-player! ,(make-player controller)))
 
       ;; return the runner!
       (lambda ()
@@ -181,6 +182,8 @@
         [vfs	(model-vfs model)]
         ;; assume initial pea state is stopped.
         [state	(pea-state STOPPED)]
+        ;; player driver. ie, handles play, pause, stop etc...
+        [player	#f]
         ;; timer used to announce upcoming video before playing.
         [announce-timer #f]	; HMMM always create the timer, and just re-arm as needed?
         [announce-delay 5])
@@ -271,8 +274,11 @@
              [(STOPPED)
               (set! state (pea-state PLAY))
               ;; TODO check that play actually works.
-              (play (list-ref (vfs-tracks vfs) (cursor-index cursor))
-                    (vfs-current vfs))
+              (player
+                'play!
+                (track-join-path
+                  (vfs-current vfs)
+                  (list-ref (vfs-tracks vfs) (cursor-index cursor))))
               (cursor-save cursor)
               'ACK]
              [else
@@ -284,7 +290,7 @@
               (when announce-timer
                 (ev-timer-stop announce-timer)
                 (set! announce-timer #f))
-              (stop)
+              (player 'stop!)
               'ACK]
              [else
                `(DOH "Cannot stop! from current state" ,state)])]
@@ -293,7 +299,7 @@
              [(STOP STOPPED)
               `(DOH "Cannot toggle! pause from current state" ,state)]
              [else
-               (toggle-pause)
+               (player 'toggle!)
                'ACK])]
 
           ;;;; VFS navigation.
@@ -344,6 +350,10 @@
           ;;;; Player informational messages. Multicast them.
           [(LEN POS TAGS MPV)
            (write-now input mcast)]
+
+          ;; HMMM both player and controller need to refer to each other. Not sure I like it this way..
+          [(set-player!)
+           (set! player (arg input))]
 
           ;; HMMM add a help command?
           [else
