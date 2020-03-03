@@ -233,26 +233,29 @@
       ;; [return] result of (controller play!) or #f if nothing left in playlist.
       (define play-another
         (lambda ()
+          (define (start-play)
+            (set! state (pea-state STOPPED))	; set STOPPED as play! currently requires it.
+            (controller 'play!))
           (case state
             [(PLAYING)	; current mode is to keep playing, so try and move to the next track.
              (case (controller '(move! 1))
                [(ACK)
-                (set! state (pea-state STOPPED))	; set STOPPED as play! currently requires it.
                 (let ([t (list-ref (vfs-tracks vfs) (cursor-index cursor))])
                   (case (track-type t)
                     [(VIDEO)
                      ;; For upcoming VIDEO tracks, announce the title, and set a timer before playing.
+                     ;; This allows for cancellation of continuous play.
                      ;; HMMM should there be an ANNOUNCE state?
                      (write-now `(ANNOUNCE ,announce-delay "Upcoming video" ,(track-title t)) mcast)
                      (set! announce-timer
                        (ev-timer announce-delay 0
                                  (lambda (timer i)
                                    (set! announce-timer #f)
-                                   (controller 'play!))))
+                                   (start-play))))
                      ]
                     [else
                       ;; Otherwise, play immediately.
-                      (controller 'play!)]))]
+                      (start-play)]))]
                [else
                  ;; Nothing more in the playlist.
                  ;; HMMM should cursor move to position 0 before stopping?
