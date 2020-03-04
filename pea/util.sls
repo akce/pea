@@ -1,15 +1,35 @@
 (library (pea util)
   (export
+    arg
+    command
     define-enum
     my
     reverse-map
     slurp
     string-join string-trim-both
+    write-now
     )
   (import
     (rnrs)
     (irregex)
     (only (chezscheme) datum))
+
+  ;; [proc] arg: get first argument.
+  ;; HMMM check return type is singleton?
+  (define arg
+    (lambda (input)
+      (cadr input)))
+
+  ;; [proc] command: sanitise 1st arg (if any) of input.
+  (define command
+    (lambda (input)
+      (cond
+        [(null? input)
+         'EMPTY]
+        [(list? input)
+         (car input)]
+        [else
+          input])))
 
   ;; [syntax] define-enum: generates a syntax transformer that evaluates the value of an enum at compile time.
   ;; eg, using trace-define-syntax:
@@ -105,4 +125,14 @@
     (let ([p (irregex '(w/nocase (* space ) (submatch (* nonl)) (* space)))])
       (lambda (line)
         (irregex-match-substring (irregex-search p line) 1))))
+
+  ;; [proc] write-now: write message and flush port.
+  ;; If I had a dollar for the number of times i've forgotten to flush after write....
+  (define write-now
+    (lambda (msg port)
+      (write msg port)
+      ;; NB newline is very import here. Chez scheme reader (read) seems to require it.
+      ;; Otherwise pea ends up with the reader in weird states waiting for more data.
+      (newline port)
+      (flush-output-port port)))
   )

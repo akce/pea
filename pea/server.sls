@@ -28,7 +28,7 @@
     (only (chezscheme) display-condition)
     (pea player)
     (pea playlist)
-    (only (pea util) define-enum my)
+    (only (pea util) arg command define-enum my write-now)
     (pea vfs)
     ;; 3rd party libs.
     (ev)
@@ -102,6 +102,8 @@
         ;; WARNING: Using 'read' here assumes that clients are well behaved and send fully formed sexprs.
         ;; WARNING: A partial datum will cause read to block the thread as it waits for a complete message.
         (let ([input (read client-port)])
+          ;;(display "client incoming: ")(write input)(newline)
+          ;;(flush-output-port (current-output-port))
           (cond
             [(eof-object? input)
              ;; TODO show client address.
@@ -187,23 +189,6 @@
         ;; timer used to announce upcoming video before playing.
         [announce-timer #f]	; HMMM always create the timer, and just re-arm as needed?
         [announce-delay 5])
-
-      ;; [proc] command: sanitise 1st arg (if any) of input.
-      (define command
-        (lambda (input)
-          (cond
-            [(null? input)
-             'EMPTY]
-            [(list? input)
-             (car input)]
-            [else
-              input])))
-
-      ;; [proc] arg: get first argument.
-      ;; HMMM check return type is singleton?
-      (define arg
-        (lambda (input)
-          (cadr input)))
 
       ;; [proc] ack-mcast: Multicasts message and returns ACK to caller (ie, client).
       (define ack-mcast
@@ -393,16 +378,4 @@
               (let ([msg (controller in)])
                 (when msg
                   (write-now msg (current-output-port))))])))))
-
-  ;; [proc] socket->port: shortcut for creating a text port from a binary socket
-  (define socket->port
-    (lambda (sock)
-      (transcoded-port (socket-input/output-port sock) (native-transcoder))))
-
-  ;; [proc] write-now: write message and flush port.
-  ;; If I had a dollar for the number of times i've forgotten to flush after write....
-  (define write-now
-    (lambda (msg port)
-      (write msg port)
-      (flush-output-port port)))
   )
