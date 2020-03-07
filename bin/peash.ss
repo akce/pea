@@ -7,7 +7,7 @@
   (rnrs)
   (only (chezscheme) format)
   (pea client)
-  (only (pea util) arg command string-join write-now)
+  (only (pea util) arg command my string-join write-now)
   (ev)
   )
 
@@ -89,8 +89,11 @@
     (format "~2,'0d" num)))
 
 (define seconds->string
-  (lambda (secs)
-    (string-append (pad-num (div secs 3600)) ":" (pad-num (div secs 60)) ":" (pad-num (mod secs 60)))))
+  (lambda (seconds)
+    (my
+      [mins (div seconds 60)]
+      [hours (div mins 60)])
+    (string-append (pad-num hours) ":" (pad-num (mod mins 60)) ":" (pad-num (mod seconds 60)))))
 
 (controller `(client-set! ,server-msg-handler))
 
