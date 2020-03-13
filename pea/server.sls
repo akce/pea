@@ -96,7 +96,8 @@
         [client-port	(socket->port client-sock)])
       ;; Return a welcome message.
       (write-now '(AHOJ "Control connection established, welcome to PEA! :)") client-port)
-      ;; TODO unicast current state, so UIs can immediately draw themselves.
+      ;; Send current state, so UIs can immediately draw themselves.
+      (write-now (controller 'info) client-port)
 
       (lambda (w revent)
         ;; WARNING: Using 'read' here assumes that clients are well behaved and send fully formed sexprs.
