@@ -185,13 +185,18 @@
         ;; accessors for convenience.
         [cursor	(model-cursor model)]
         [vfs	(model-vfs model)]
-        ;; assume initial pea state is stopped.
-        [state	(pea-state STOPPED)]
         ;; player driver. ie, handles play, pause, stop etc...
         [player	#f]
         ;; timer used to announce upcoming video before playing.
         [announce-timer #f]	; HMMM always create the timer, and just re-arm as needed?
-        [announce-delay 5])
+        [announce-delay 5]
+        ;; assume initial pea state is stopped.
+        [state	(pea-state STOPPED)]
+        ;; cache the current track info.
+        [track-tags	'()]
+        [track-pos	#f]
+        [track-length	#f]
+        )
 
       ;; [proc] ack-mcast: Multicasts message and returns ACK to caller (ie, client).
       (define ack-mcast
@@ -208,14 +213,21 @@
             (set! state new-state)
             (write-now `(STATE ,new-state) mcast))))
 
-      ;; [proc] make-i: make current i (cursor index position track-info).
-      ;; [return] (I index vpath current-track-title current-track-type)
+      ;; [proc] make-info: make current i (cursor index position track-info).
+      ;; [return] (I state index vpath current-track-title current-track-type)
       ;; Do not send track record as scheme readers need to understand (import) the track record def.
-      (define make-i
+      (define make-info
         (lambda ()
           (let* ([i (cursor-index cursor)]
                  [t (list-ref (vfs-tracks vfs) i)])
-            `(I ,i ,(vfs-vpath vfs) (,(track-title t) ,(track-type t))))))
+            `(I
+               ,state
+               ,i
+               ,(vfs-vpath vfs)
+               ,track-tags
+               ,track-pos
+               ,track-length
+               (,(track-title t) ,(track-type t))))))
 
       ;; [proc] play-another: attempt to play the next song in the current playlist.
       ;; [return] result of (controller play!) or #f if nothing left in playlist.
@@ -304,7 +316,7 @@
            ;; Only signal if there was a change of position.
            (let ([new-pos (cursor-move! cursor (arg input))])
              (if new-pos
-                 (ack-mcast (make-i))
+                 (ack-mcast (make-info))
                  '(DOH "move! cursor unchanged")))]
           [(pop!)
            ;; Ensure pop! then sync!
@@ -322,15 +334,19 @@
            (ack-mcast '(BYE "server end: goodbye"))]
 
           ;;;; Client query commands.
-          [(i)		; current position info: including vpath and track.
-           (make-i)]
+          [(info)		; includes player state, vpath and track.
+           (make-info)]
           [(tracks)
            (make-ui-track-list vfs)]
 
           ;;;; Player change state commands. Multicast them.
           [(STOPPED)
            (unless (play-another)
-             (state-set! (pea-state STOPPED)))]
+             (state-set! (pea-state STOPPED))
+             ;; Reset track cache data.
+             (set! track-tags #f)
+             (set! track-length #f)
+             (set! track-pos #f))]
           [(PLAYING)
            (state-set! (pea-state PLAYING))]
           [(PAUSED)
@@ -338,8 +354,18 @@
           [(UNPAUSED)
            (state-set! (pea-state PLAYING))]
 
-          ;;;; Player informational messages. Multicast them.
-          [(LEN POS TAGS MPV)
+          ;;;; Player informational messages. Cache and multicast them.
+          [(LEN)
+           (set! track-length (arg input))
+           (write-now input mcast)]
+          [(POS)
+           (set! track-pos (arg input))
+           (write-now input mcast)]
+          [(TAGS)
+           (set! track-tags (arg input))
+           (write-now input mcast)]
+          ;; mpv debug message.
+          [(MPV)
            (write-now input mcast)]
 
           ;; HMMM both player and controller need to refer to each other. Not sure I like it this way..

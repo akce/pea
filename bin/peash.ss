@@ -38,6 +38,8 @@
 (define ui->server-command
   (lambda (input)
     (case (command input)
+      [(i)
+       'info]
       [(ls)
        'tracks]
       [else
