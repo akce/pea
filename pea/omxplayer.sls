@@ -33,7 +33,7 @@
 
        (define omx-set!
          (lambda (key)
-           (write key omx-stdin)
+           (display key omx-stdin)
            (flush-output-port omx-stdin)))
 
        (lambda input
@@ -45,6 +45,7 @@
                   (open-process-ports (string-append base-command (quote-string (cadr input)))
                                       (buffer-mode block) (native-transcoder))])
                 (set! state 'PLAYING)
+                (set! omx-stdin to-stdin)
                 (make-omxwatcher from-stdout)
                 (controller state)))]
            [(toggle!)
