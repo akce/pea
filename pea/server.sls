@@ -28,7 +28,7 @@
     (only (chezscheme) display-condition)
     (pea player)
     (pea playlist)
-    (only (pea util) arg command define-enum my write-now)
+    (only (pea util) arg command define-enum my input-port-ready? read-trim-right write-now)
     (pea vfs)
     ;; 3rd party libs.
     (ev)
@@ -101,7 +101,7 @@
       (lambda (w revent)
         ;; WARNING: Using 'read' here assumes that clients are well behaved and send fully formed sexprs.
         ;; WARNING: A partial datum will cause read to block the thread as it waits for a complete message.
-        (let ([input (read client-port)])
+        (let loop ([input (read-trim-right client-port)])
           ;;(display "client incoming: ")(write input)(newline)
           ;;(flush-output-port (current-output-port))
           (cond
@@ -126,7 +126,10 @@
                      (flush-output-port client-port)])
                 (let ([msg (controller input)])
                   (when msg
-                    (write-now msg client-port))))])))))
+                    (write-now msg client-port)))
+                ;; drain input port.
+                (when (input-port-ready? client-port)
+                  (loop (read-trim-right client-port))))])))))
 
   ;; PEA states follow a simple pattern:
   ;; - client requests player enter a state,
@@ -366,7 +369,7 @@
   (define make-stdin-reader
     (lambda (controller)
       (lambda (w revent)
-        (let ([in (read (current-input-port))])
+        (let ([in (read-trim-right (current-input-port))])
           (cond
             [(eof-object? in)
              (ev-io-stop w)

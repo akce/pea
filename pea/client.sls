@@ -5,7 +5,7 @@
     make-pea-client)
   (import
     (rnrs)
-    (only (pea util) arg command my write-now)
+    (only (pea util) arg command my input-port-ready? read-trim-right write-now)
     (ev)
     (socket extended)
     )
@@ -126,7 +126,6 @@
 
   (define control-msg-handler
     (lambda (model msg)
-      ;;(display "control srv->client: ")(write msg)(newline)
       (case (command msg)
         [else
           msg]
@@ -137,7 +136,7 @@
   (define make-watcher
     (lambda (handler port sock error-id)
       (lambda (w revent)
-        (let ([data (read port)])
+        (let loop ([data (read-trim-right port)])
           (cond
             [(eof-object? data)
              (ev-io-stop w)
@@ -147,5 +146,8 @@
              ;; TODO try re-open at intervals.
              (error error-id "remote socket closed")]
             [else
-              (handler data)])))))
+              (handler data)
+              ;; drain input port.
+              (when (input-port-ready? port)
+                (loop (read-trim-right port)))])))))
   )

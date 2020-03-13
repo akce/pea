@@ -4,6 +4,8 @@
     command
     define-enum
     my
+    (rename (safe-input-port-ready? input-port-ready?))
+    read-trim-right
     reverse-map
     slurp
     string-join string-trim-both
@@ -12,7 +14,7 @@
   (import
     (rnrs)
     (irregex)
-    (only (chezscheme) datum))
+    (only (chezscheme) datum input-port-ready?))
 
   ;; [proc] arg: get first argument.
   ;; HMMM check return type is singleton?
@@ -68,6 +70,41 @@
       [(_ (name val) ...)
        (begin
          (define name val) ...)]))
+
+  ;; Wraps input-port-ready? so that any raised exception is converted to false.
+  ;; The custom port for the socket is raising &i/o-read-error occasionally.
+  ;; See: chez s/io.ss ~= /cannot determine ready status/
+  ;; It appears to trigger when port is empty and has not reached eof.
+  (define safe-input-port-ready?
+    (lambda (port)
+      (guard (e [else #f])
+        (input-port-ready? port))))
+
+  ;; [proc] read-trim-right: performs a read and then trims trailing whitespace.
+  (define read-trim-right
+    (case-lambda
+      [()
+       (read-trim-right (current-input-port))]
+      [(port)
+       ;; NB char-whitespace? will exception if it sees an eof-object.
+       ;; NB char-skip? allows for a nice easy logic check after 'read'.
+       (define (char-skip? ch)
+         (cond
+           [(eof-object? ch)
+            ;; caller will not want us to skip eof.
+            #f]
+           [else
+             (char-whitespace? ch)]))
+       (let ([ret (read port)])
+         ;; Datum is read into 'ret'. Remove any further whitespace.
+         (let loop ()
+           (cond
+             [(and (safe-input-port-ready? port)
+                   (char-skip? (peek-char port)))
+              (read-char port)
+              (loop)]
+             [else
+               ret])))]))
 
   ;; [proc] reverse-map: like map, but list is returned in reverse.
   ;; TODO support multiple lists.
