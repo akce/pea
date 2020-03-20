@@ -97,7 +97,8 @@
       ;; Return a welcome message.
       (write-now '(AHOJ "Control connection established, welcome to PEA! :)") client-port)
       ;; Send current state, so UIs can immediately draw themselves.
-      (write-now (controller 'info) client-port)
+      (write-now (controller 'state?) client-port)
+      (write-now (controller 'vfs?) client-port)
 
       (lambda (w revent)
         ;; WARNING: Using 'read' here assumes that clients are well behaved and send fully formed sexprs.
@@ -212,23 +213,32 @@
         (lambda (new-state)
           (unless (eq? state new-state)
             (set! state new-state)
-            (write-now `(STATE ,new-state) mcast))))
+            (write-now (make-state-info) mcast))))
 
-      ;; [proc] make-info: make current i (cursor index position track-info).
-      ;; [return] (I state index vpath current-track-title current-track-type)
+      ;; [proc] make-state-info:
+      ;; [return] (STATE ...)
       ;; Do not send track record as scheme readers need to understand (import) the track record def.
-      (define make-info
+      (define make-state-info
+        (lambda ()
+          `(STATE
+             ;; pea-state
+             ,state
+             ;; Current track pos/length/tags. Can be #f if STOPPED.
+             ,track-pos
+             ,track-length
+             ,track-tags
+             )))
+
+      ;; Playlist state: vpath/index/title/type
+      (define make-vfs-info
         (lambda ()
           (let* ([i (cursor-index cursor)]
                  [t (list-ref (vfs-tracks vfs) i)])
-            `(I
-               ,state
-               ,i
+            `(VFS
                ,(vfs-vpath vfs)
-               ,track-tags
-               ,track-pos
-               ,track-length
-               (,(track-title t) ,(track-type t))))))
+               ,i
+               ,(track-title t)
+               ,(track-type t)))))
 
       ;; [proc] play-another: attempt to play the next song in the current playlist.
       ;; [return] result of (controller play!) or #f if nothing left in playlist.
@@ -308,46 +318,45 @@
 
           ;;;; VFS navigation.
           [(enter!)
-           ;; Ensure enter! then sync!
-           (let* ([vpath (vfs-enter! vfs (cursor-index cursor))]
-                  [pos (cursor-sync! cursor)])
-             (cursor-save cursor)
-             (ack-mcast `(VPATH ,pos ,vpath)))]
+           (vfs-enter! vfs (cursor-index cursor))
+           (cursor-sync! cursor)
+           (cursor-save cursor)
+           (ack-mcast (make-vfs-info))]
           [(move!)
            ;; Only signal if there was a change of position.
            (let ([new-pos (cursor-move! cursor (arg input))])
              (if new-pos
-                 (ack-mcast (make-info))
+                 (ack-mcast (make-vfs-info))
                  '(DOH "move! cursor unchanged")))]
           [(pop!)
-           ;; Ensure pop! then sync!
-           (let* ([vpath (vfs-pop! vfs)]
-                  [pos (cursor-sync! cursor)])
-             (ack-mcast `(VPATH ,pos ,vpath)))]
+           (vfs-pop! vfs)
+           (cursor-sync! cursor)
+           (ack-mcast (make-vfs-info))]
           [(root!)
-           ;; Ensure root! then sync!
-           (let* ([vpath (vfs-root! vfs)]
-                  [pos (cursor-sync! cursor)])
-             (ack-mcast `(VPATH ,pos ,vpath)))]
+           (vfs-root! vfs)
+           (cursor-sync! cursor)
+           (ack-mcast (make-vfs-info))]
           ;; Server quit. Note the double exclamations: this is an important command!!
           [(quit!!)
            (ev-break (evbreak 'ALL))
            (ack-mcast '(BYE "server end: goodbye"))]
 
           ;;;; Client query commands.
-          [(info)		; includes player state, vpath and track.
-           (make-info)]
-          [(tracks)
-           (make-ui-track-list vfs)]
+          [(state?)
+           (make-state-info)]
+          [(tracks?)
+           (make-track-list vfs)]
+          [(vfs?)
+           (make-vfs-info)]
 
           ;;;; Player change state commands. Multicast them.
           [(STOPPED)
            (unless (play-another)
-             (state-set! (pea-state STOPPED))
              ;; Reset track cache data.
              (set! track-tags #f)
              (set! track-length #f)
-             (set! track-pos #f))]
+             (set! track-pos #f))
+             (state-set! (pea-state STOPPED))]
           [(PLAYING)
            (state-set! (pea-state PLAYING))]
           [(PAUSED)
@@ -385,7 +394,7 @@
   ;; [proc] make-ui-track-list: return current playlist tracks with info that a UI would find useful.
   ;; ie,
   ;; '(TRACKS (("title-string" . TYPE) ...))
-  (define make-ui-track-list
+  (define make-track-list
     (lambda (vfs)
       `(TRACKS
          ,(map

@@ -2,9 +2,12 @@
 (library
   (pea client)
   (export
-    make-pea-client)
+    make-pea-client
+    seconds->string
+    )
   (import
     (rnrs)
+    (only (chezscheme) format)
     (only (pea util) arg command my input-port-ready? read-trim-right write-now)
     (ev)
     (socket extended)
@@ -21,21 +24,27 @@
       ;; VFS/playlist.
       [mutable		vpath]
       [mutable		cursor]
-      [mutable		tracks]
+      [mutable		title]
+      [mutable		type]
 
       ;; Track/playback.
       [mutable		state]
       [mutable		pos]
       [mutable		duration]
-      [mutable		title]
       [mutable		tags]
-      [mutable		last-msg])
+
+      [mutable		tracks]
+      )
     (protocol
       (lambda (new)
         (lambda (ctrl-node ctrl-service mcast-node mcast-service)
           (new ctrl-node ctrl-service mcast-node mcast-service
-               #f #f #f
-               #f #f #f #f #f #f)))))
+               ;; vfs/playlist
+               #f #f #f #f
+               ;; track/playback
+               #f #f #f #f
+               ;; tracks
+               #f)))))
 
   (define make-pea-client
     (lambda (ctrl-node ctrl-service mcast-node mcast-service)
@@ -80,15 +89,24 @@
                (h input))
              handlers)
            'ACK]
-          [(len)
+          [(cached-cursor?)
+           (model-cursor model)]
+          [(cached-len?)
            (model-duration model)]
-          [(pos)
+          [(cached-pos?)
            (model-pos model)]
-          [(tags)
+          [(cached-state?)
+           (model-state model)]
+          [(cached-tags?)
            (model-tags model)]
+          [(cached-tracks?)
+           (model-tracks model)]
+          [(cached-type?)
+           (model-type model)]
+          [(cached-vpath?)
+           (model-vpath model)]
           [else
             ;; TODO verify command.
-            ;;(display "ui->server: ")(write input)(newline)
             (write-now input ctrl-port)
             #f]))))
 
@@ -109,27 +127,35 @@
 
   (define mcast-msg-handler
     (lambda (model msg)
-      ;;(display "mcast recv: ")(write msg)(newline)
       (case (command msg)
         [(POS)
          (model-pos-set! model (arg msg))]
         [(LEN)
          (model-duration-set! model (arg msg))]
         [(STATE)
-         (model-state-set! model (arg msg))]
+         (model-state-set! model (state-info-state msg))
+         (model-pos-set! model (state-info-track-pos msg))
+         (model-duration-set! model (state-info-track-length msg))
+         (model-tags-set! model (state-info-track-tags msg))]
         [(TAGS)
          (model-tags-set! model (arg msg))]
-        #;[else
-          msg]
+        [(VFS)
+         (model-vpath-set! model (vfs-info-vpath msg))
+         (model-cursor-set! model (vfs-info-cursor msg))
+         (model-title-set! model (vfs-info-track-title msg))
+         (model-type-set! model (vfs-info-track-type msg))]
         )
     msg))
 
   (define control-msg-handler
     (lambda (model msg)
       (case (command msg)
+        [(TRACKS)
+         (model-tracks-set! model (arg msg))]
         [else
-          msg]
-        )))
+          (mcast-msg-handler model msg)]
+        )
+      msg))
 
   ;; generic event watcher function.
   ;; 'read' data will be passed onto the handler.
@@ -150,4 +176,43 @@
               ;; drain input port.
               (when (input-port-ready? port)
                 (loop (read-trim-right port)))])))))
+
+  ;;;; Client util functions.
+  ;; These could be useful to multiple clients so could be moved into a (client util) lib.
+
+  (define state-info-state
+    (lambda (i)
+      (list-ref i 1)))
+  (define state-info-track-pos
+    (lambda (i)
+      (list-ref i 2)))
+  (define state-info-track-length
+    (lambda (i)
+      (list-ref i 3)))
+  (define state-info-track-tags
+    (lambda (i)
+      (list-ref i 4)))
+  (define vfs-info-vpath
+    (lambda (i)
+      (list-ref i 1)))
+  (define vfs-info-cursor
+    (lambda (i)
+      (list-ref i 2)))
+  (define vfs-info-track-title
+    (lambda (i)
+      (list-ref i 3)))
+  (define vfs-info-track-type
+    (lambda (i)
+      (list-ref i 4)))
+
+  (define pad-num
+    (lambda (num)
+      (format "~2,'0d" num)))
+
+  (define seconds->string
+    (lambda (seconds)
+      (my
+        [mins (div seconds 60)]
+        [hours (div mins 60)])
+      (string-append (pad-num hours) ":" (pad-num (mod mins 60)) ":" (pad-num (mod seconds 60)))))
   )

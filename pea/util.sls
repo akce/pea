@@ -3,6 +3,7 @@
     arg
     command
     define-enum
+    list-slice
     my
     (rename (safe-input-port-ready? input-port-ready?))
     read-trim-right
@@ -14,7 +15,7 @@
   (import
     (rnrs)
     (irregex)
-    (only (chezscheme) datum input-port-ready?))
+    (only (chezscheme) datum input-port-ready? list-head))
 
   ;; [proc] arg: get first argument.
   ;; HMMM check return type is singleton?
@@ -62,6 +63,18 @@
              [(_ v)
               (eq? (datum v) (syntax->datum #'var*))
               #'val*] ...)))]))
+
+  ;; [proc] list-slice: return exact slice or as much as able.
+  (define list-slice
+    (lambda (lst offset len)
+      (let ([lst-len (length lst)])
+        (cond
+          [(<= (+ offset len) lst-len)
+           (list-head (list-tail lst offset) len)]
+          [(> offset lst-len)
+           '()]
+          [else
+            (list-tail lst offset)]))))
 
   ;; [syntax] my: short-hand for batch defines.
   ;; Name gratuitously taken from perl. I also like that it's nice and short.
