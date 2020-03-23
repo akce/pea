@@ -39,14 +39,23 @@
 (define folder-code (char->integer #\/))
 (define unknown-code (char->integer #\?))
 
+(define playlist-window #f)
+
 (define app-name "The System v3.0")
 
 (define draw-border
   (lambda ()
     (box stdscr ACS_VLINE ACS_HLINE)
-    (mvaddch (- LINES 1) (- COLS (string-length app-name) 3) ACS_RTEE)
-    (addstr app-name)
-    (addch ACS_LTEE)))
+    (mvwaddch stdscr (- LINES 1) (- COLS (string-length app-name) 3) ACS_RTEE)
+    (waddstr stdscr app-name)
+    (waddch stdscr ACS_LTEE)
+    (wnoutrefresh stdscr)))
+
+(define create-windows
+  (lambda ()
+    (set! playlist-window
+      (newwin (- LINES 2) (- (div COLS 2) 2) 1 (div COLS 2)))
+    ))
 
 (define list-view
   (lambda (lst p h)
@@ -68,29 +77,24 @@
       [else		unknown-code])))
 
 (define draw-list
-  (lambda (lst p y x w h)
-    (let-values ([(slst sp) (list-view lst (if p p -1) h)])
-      (cond
-        [(null? slst)
-         ;; blank the list panel.
-         (let loop ([i 0])
-           (when (< i h)
-             ;; TODO write a blank line.
-             (loop (+ i 1))))]
-        [else
-          (let loop ([ts slst] [i 0])
-            (cond
-              [(null? ts)
-               (if #f #f)]
-              [else
-                ;; TODO this is playlist specific. Need to abstract this bit away..
-                (mvaddch (+ i y) x (get-filetype-char (cdr (car ts))))
-                (when (= sp i)
-                  (attr-on A_REVERSE))
-                (mvaddstr (+ i y) (+ x 2) (safe-substring (car (car ts)) 0 (- w 2)))
-                (when (= sp i)
-                  (attr-off A_REVERSE))
-                (loop (cdr ts) (+ i 1))]))]))
+  (lambda (win lst pos)
+    (define w (- (getmaxx win) 2))
+    (werase win)
+    (let-values ([(slst sp) (list-view lst (if pos pos -1) (getmaxy win))])
+      (let loop ([ts slst] [i 0])
+        (cond
+          [(null? ts)
+           (wnoutrefresh win)]
+          [else
+            ;; TODO this is playlist specific. Need to abstract this bit away..
+            (mvwaddch win i 0 (get-filetype-char (cdr (car ts))))
+            (when (= sp i)
+              (wattr-on win A_REVERSE))
+            (mvwaddstr win i 2
+                       (safe-substring (car (car ts)) 0 w))
+            (when (= sp i)
+              (wattr-off win A_REVERSE))
+            (loop (cdr ts) (+ i 1))])))
     ))
 
 (define object->string
@@ -113,55 +117,59 @@
       (lambda (msg)
         (let ([y (- LINES 2)]
               [msg-str (safe-substring (object->string msg) 0 (- COLS 2))])
-          (mvaddstr y 1 msg-str)
-          (clrtoeol)
-          (mvaddch y (- COLS 1) ACS_VLINE))))
+          (mvwaddstr stdscr y 1 msg-str)
+          (wclrtoeol stdscr)
+          (mvwaddch stdscr y (- COLS 1) ACS_VLINE)
+          (wnoutrefresh stdscr))))
 
     (define draw-state
       (lambda ()
-        (mvaddch 1 2
-                 (case (controller 'cached-state?)
-                   [(PLAYING)	ACS_GEQUAL]
-                   [(PAUSED)	ACS_NEQUAL]
-                   [(STOPPED)	ACS_DIAMOND]
-                   [else	(char->integer #\?)]))))
+        (mvwaddch stdscr
+                  1 2
+                  (case (controller 'cached-state?)
+                    [(PLAYING)	ACS_GEQUAL]
+                    [(PAUSED)	ACS_NEQUAL]
+                    [(STOPPED)	ACS_DIAMOND]
+                    [else	(char->integer #\?)]))))
 
     (define draw-tags
       (lambda ()
         (define tags (controller 'cached-tags?))
-        (if #f #f)
+        (wnoutrefresh stdscr)
         ))
 
     (define draw-timer
       (lambda ()
         (define pos (controller 'cached-pos?))
         (define len (controller 'cached-len?))
-        (mvaddstr 1 4 (if pos
+        (mvwaddstr stdscr
+                   1 4 (if pos
                           (seconds->string pos)
                           "-"))
         (when len
-          (addstr " / ")
-          (addstr (seconds->string len)))))
+          (waddstr stdscr " / ")
+          (waddstr stdscr (seconds->string len)))
+        (wnoutrefresh stdscr)))
 
     (define draw-tracks
       (lambda ()
-        (define pos (controller 'cached-cursor?))
-        (define tracks (controller 'cached-tracks?))
-        (draw-list tracks pos 1 (div COLS 2) (- (div COLS 2) 2) (- LINES 2))))
+        (draw-list
+          playlist-window
+          (controller 'cached-tracks?)
+          (controller 'cached-cursor?))))
 
     (define draw-vfs
       (lambda ()
         (define vpath (controller 'cached-vpath?))
-        (draw-border)
         (if vpath
             (begin
-              (mvaddch 0 1 ACS_RTEE)
-              (addstr (safe-substring (apply string-join "/" vpath) 0 (- COLS 5)))
-              (addch ACS_LTEE)
-              ;; TODO draw ACS_HLINE to eol.
+              (mvwaddch stdscr 0 1 ACS_RTEE)
+              (waddstr stdscr (safe-substring (apply string-join "/" vpath) 0 (- COLS 5)))
+              (waddch stdscr ACS_LTEE)
+              (whline stdscr ACS_HLINE (- COLS 1 (getcurx stdscr))))
+            (mvwhline stdscr 0 1 ACS_HLINE (- COLS 2))
             )
-            ;; TODO clear vpath.
-            )))
+        (wnoutrefresh stdscr)))
 
     (define server-msg-handler
       (lambda (msg)
@@ -182,7 +190,7 @@
           )
         (when debug
           (draw-msg msg))
-        (refresh)))
+        (doupdate)))
 
     (define char->pea-command
       (lambda (ch controller)
@@ -237,8 +245,9 @@
     (ev-run)))
 
 (init-curses)
+(create-windows)
 (draw-border)
-(refresh)
+(doupdate)
 
 (guard (e [else
             (endwin)
