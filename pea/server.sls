@@ -342,18 +342,24 @@
            (ack-mcast '(BYE "server end: goodbye"))]
 
           ;;;; Client query commands.
+          [(len?)
+           track-length]
+          [(pos?)
+           track-pos]
           [(state?)
            (make-state-info)]
+          [(tags?)
+           track-tags]
           [(tracks?)
            (make-track-list vfs)]
           [(vfs?)
            (make-vfs-info)]
 
-          ;;;; Player change state commands. Multicast them.
+          ;;;; Player change state commands. Cache and multicast them.
           [(STOPPED)
            (unless (play-another)
              ;; Reset track cache data.
-             (set! track-tags #f)
+             (set! track-tags '())
              (set! track-length #f)
              (set! track-pos #f))
              (state-set! (pea-state STOPPED))]
