@@ -41,6 +41,7 @@
 
 (define controls-window #f)
 (define playlist-window #f)
+(define tags-window #f)
 (define timer-window #f)
 
 (define app-name "The System v3.0")
@@ -57,6 +58,7 @@
   (lambda ()
     (set! controls-window (newwin 1 2 1 1))
     (set! timer-window (newwin 1 19 1 4))
+    (set! tags-window (newwin (- LINES 3) (- (div COLS 2) 2) 2 1))
     (set! playlist-window
       (newwin (- LINES 2) (- (div COLS 2) 2) 1 (div COLS 2)))
     ))
@@ -140,8 +142,23 @@
     (define draw-tags
       (lambda ()
         (define tags (controller 'cached-tags?))
-        (wnoutrefresh stdscr)
-        ))
+        (werase tags-window)
+        (unless (null? tags)
+          (let* ([label-len
+                   (+ 1
+                      (apply max
+                             (map
+                               (lambda (x)
+                                 (string-length (car x)))
+                               tags)))]
+                 [tag-len (- (getmaxx tags-window) label-len)])
+            (let loop ([ts tags] [i 0])
+              (unless (null? ts)
+                (mvwaddstr tags-window i 0 (caar ts))
+                (mvwaddstr tags-window i label-len
+                           (safe-substring (cdar ts) 0 tag-len))
+                (loop (cdr ts) (+ i 1))))))
+        (wnoutrefresh tags-window)))
 
     (define draw-timer
       (lambda ()
@@ -185,6 +202,7 @@
           [(STATE)
            (draw-controls)
            (draw-timer)
+           (draw-tags)
            ]
           [(TAGS)
            (draw-tags)]
