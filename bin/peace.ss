@@ -39,7 +39,9 @@
 (define folder-code (char->integer #\/))
 (define unknown-code (char->integer #\?))
 
+(define controls-window #f)
 (define playlist-window #f)
+(define timer-window #f)
 
 (define app-name "The System v3.0")
 
@@ -53,6 +55,8 @@
 
 (define create-windows
   (lambda ()
+    (set! controls-window (newwin 1 2 1 1))
+    (set! timer-window (newwin 1 19 1 4))
     (set! playlist-window
       (newwin (- LINES 2) (- (div COLS 2) 2) 1 (div COLS 2)))
     ))
@@ -122,15 +126,16 @@
           (mvwaddch stdscr y (- COLS 1) ACS_VLINE)
           (wnoutrefresh stdscr))))
 
-    (define draw-state
+    (define draw-controls
       (lambda ()
-        (mvwaddstr stdscr
-                   1 2
+        (mvwaddstr controls-window
+                   0 0
                    (case (controller 'cached-state?)
                      [(PLAYING)	"|>"]
                      [(PAUSED)	"||"]
                      [(STOPPED)	"[]"]
-                     [else	"??"]))))
+                     [else	"??"]))
+        (wnoutrefresh controls-window)))
 
     (define draw-tags
       (lambda ()
@@ -142,14 +147,15 @@
       (lambda ()
         (define pos (controller 'cached-pos?))
         (define len (controller 'cached-len?))
-        (mvwaddstr stdscr
-                   1 5 (if pos
+        (werase timer-window)
+        (mvwaddstr timer-window
+                   0 0 (if pos
                           (seconds->string pos)
                           "-"))
         (when len
-          (waddstr stdscr " / ")
-          (waddstr stdscr (seconds->string len)))
-        (wnoutrefresh stdscr)))
+          (waddstr timer-window " / ")
+          (waddstr timer-window (seconds->string len)))
+        (wnoutrefresh timer-window)))
 
     (define draw-tracks
       (lambda ()
@@ -177,7 +183,7 @@
           [(LEN POS)
            (draw-timer)]
           [(STATE)
-           (draw-state)
+           (draw-controls)
            (draw-timer)
            ]
           [(TAGS)
