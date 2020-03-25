@@ -124,13 +124,13 @@
 
     (define draw-state
       (lambda ()
-        (mvwaddch stdscr
-                  1 2
-                  (case (controller 'cached-state?)
-                    [(PLAYING)	ACS_GEQUAL]
-                    [(PAUSED)	ACS_NEQUAL]
-                    [(STOPPED)	ACS_DIAMOND]
-                    [else	(char->integer #\?)]))))
+        (mvwaddstr stdscr
+                   1 2
+                   (case (controller 'cached-state?)
+                     [(PLAYING)	"|>"]
+                     [(PAUSED)	"||"]
+                     [(STOPPED)	"[]"]
+                     [else	"??"]))))
 
     (define draw-tags
       (lambda ()
@@ -143,7 +143,7 @@
         (define pos (controller 'cached-pos?))
         (define len (controller 'cached-len?))
         (mvwaddstr stdscr
-                   1 4 (if pos
+                   1 5 (if pos
                           (seconds->string pos)
                           "-"))
         (when len
