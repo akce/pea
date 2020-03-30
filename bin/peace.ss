@@ -69,24 +69,21 @@
       [else		unknown-code])))
 
 (define draw-list
-  (lambda (win lst pos)
-    (define w (- (getmaxx win) 2))
-    (werase win)
-    (let-values ([(slst sp) (list-view lst (if pos pos -1) (getmaxy win))])
-      (let loop ([ts slst] [i 0])
-        (cond
-          [(null? ts)
-           (wnoutrefresh win)]
-          [else
-            ;; TODO this is playlist specific. Need to abstract this bit away..
-            (mvwaddch win i 0 (get-filetype-char (cdr (car ts))))
-            (when (= sp i)
-              (wattr-on win A_REVERSE))
-            (mvwaddstr win i 2
-                       (safe-substring (car (car ts)) 0 w))
-            (when (= sp i)
-              (wattr-off win A_REVERSE))
-            (loop (cdr ts) (+ i 1))])))
+  (case-lambda
+    [(win lst item-renderer)
+     (draw-list win lst #f item-renderer #f)]
+    [(win lst pos item-renderer selected-item-renderer)
+     (define w (- (getmaxx win) 2))
+     (werase win)
+     (let-values ([(slst sp) (list-view lst (if pos pos -1) (getmaxy win))])
+       (let loop ([ts slst] [i 0])
+         (cond
+           [(null? ts)
+            (wnoutrefresh win)]
+           [else
+             ((if (= sp i) selected-item-renderer item-renderer)
+              (car ts) i w)
+             (loop (cdr ts) (+ i 1))])))]
     ))
 
 (define object->string
@@ -141,12 +138,11 @@
                                  (string-length (car x)))
                                tags)))]
                  [tag-len (- (getmaxx tags-window) label-len)])
-            (let loop ([ts tags] [i 0])
-              (unless (null? ts)
-                (mvwaddstr tags-window i 0 (caar ts))
-                (mvwaddstr tags-window i label-len
-                           (safe-substring (cdar ts) 0 tag-len))
-                (loop (cdr ts) (+ i 1))))))
+            (draw-list tags-window tags
+                       (lambda (item i w)
+                         (mvwaddstr tags-window i 0 (car item))
+                         (mvwaddstr tags-window i label-len
+                                    (safe-substring (cdr item) 0 tag-len))))))
         (wnoutrefresh tags-window)))
 
     (define (draw-timer)
@@ -163,10 +159,22 @@
         (wnoutrefresh timer-window)))
 
     (define (draw-tracks)
+      (define (draw-item item i w)
+        (mvwaddch playlist-window i 0 (get-filetype-char (cdr item)))
+        (mvwaddstr playlist-window i 2
+                   (safe-substring (car item) 0 w))
+        )
+      (define (draw-selected-item item i w)
+        (mvwaddch playlist-window i 0 (get-filetype-char (cdr item)))
+        (wattr-on playlist-window A_REVERSE)
+        (mvwaddstr playlist-window i 2
+                   (safe-substring (car item) 0 w))
+        (wattr-off playlist-window A_REVERSE))
       (draw-list
         playlist-window
         (controller 'cached-tracks?)
-        (controller 'cached-cursor?)))
+        (controller 'cached-cursor?)
+        draw-item draw-selected-item))
 
     (define (draw-vfs)
       (cond
