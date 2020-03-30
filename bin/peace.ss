@@ -15,8 +15,23 @@
   (pea util)
   )
 
+;; TODO load config.
+
+(define service "49000")
+(define mcast-node "224.0.0.49")
+(define ctrl-node "localhost")
+
 (define init-curses
   (lambda ()
+    (define app-name "The System v3.0")
+    (define app-border
+      (lambda ()
+        (box stdscr ACS_VLINE ACS_HLINE)
+        (mvwaddch stdscr (- LINES 1) (- COLS (string-length app-name) 3) ACS_RTEE)
+        (waddstr stdscr app-name)
+        (waddch stdscr ACS_LTEE)
+        (wnoutrefresh stdscr)))
+
     (setlocale LC_ALL "")
     (initscr)
     (keypad stdscr #t)
@@ -24,44 +39,15 @@
     (cbreak)
     (start-color)
     (curs-set 0)
-    (use-default-colors)))
+    (use-default-colors)
 
-;; TODO load config.
-
-(define service "49000")
-(define mcast-node "224.0.0.49")
-(define ctrl-node "localhost")
-(define debug #f)
+    (app-border)))
 
 #;(define audio-code (char->integer #\♫))
 (define audio-code (char->integer #\a))
 (define video-code (char->integer #\v))
 (define folder-code (char->integer #\/))
 (define unknown-code (char->integer #\?))
-
-(define controls-window #f)
-(define playlist-window #f)
-(define tags-window #f)
-(define timer-window #f)
-
-(define app-name "The System v3.0")
-
-(define draw-border
-  (lambda ()
-    (box stdscr ACS_VLINE ACS_HLINE)
-    (mvwaddch stdscr (- LINES 1) (- COLS (string-length app-name) 3) ACS_RTEE)
-    (waddstr stdscr app-name)
-    (waddch stdscr ACS_LTEE)
-    (wnoutrefresh stdscr)))
-
-(define create-windows
-  (lambda ()
-    (set! controls-window (newwin 1 2 1 1))
-    (set! timer-window (newwin 1 19 1 4))
-    (set! tags-window (newwin (- LINES 3) (- (div COLS 2) 2) 2 1))
-    (set! playlist-window
-      (newwin (- LINES 2) (- (div COLS 2) 2) 1 (div COLS 2)))
-    ))
 
 (define list-view
   (lambda (lst p h)
@@ -114,34 +100,37 @@
     (guard (e [else str])
       (substring str start end))))
 
-(define main
-  (lambda ()
-    (define controller (make-pea-client ctrl-node service mcast-node service))
-
+(define make-protocol-view
+  (lambda (controller)
     ;; Display the object (or as much as will fit) on the last line of the screen.
-    (define draw-msg
-      (lambda (msg)
-        (let ([y (- LINES 2)]
-              [msg-str (safe-substring (object->string msg) 0 (- COLS 2))])
-          (mvwaddstr stdscr y 1 msg-str)
-          (wclrtoeol stdscr)
-          (mvwaddch stdscr y (- COLS 1) ACS_VLINE)
-          (wnoutrefresh stdscr))))
+    (lambda (msg)
+      (let ([y (- LINES 2)]
+            [msg-str (safe-substring (object->string msg) 0 (- COLS 2))])
+        (mvwaddstr stdscr y 1 msg-str)
+        (wclrtoeol stdscr)
+        (mvwaddch stdscr y (- COLS 1) ACS_VLINE)
+        (wnoutrefresh stdscr)))))
 
-    (define draw-controls
-      (lambda ()
-        (mvwaddstr controls-window
-                   0 0
-                   (case (controller 'cached-state?)
-                     [(PLAYING)	"|>"]
-                     [(PAUSED)	"||"]
-                     [(STOPPED)	"[]"]
-                     [else	"??"]))
-        (wnoutrefresh controls-window)))
+(define make-player-view
+  (lambda (controller)
+    (my
+      [controls-window #f]
+      [playlist-window #f]
+      [tags-window #f]
+      [timer-window #f])
 
-    (define draw-tags
-      (lambda ()
-        (define tags (controller 'cached-tags?))
+    (define (draw-controls)
+      (mvwaddstr controls-window
+                 0 0
+                 (case (controller 'cached-state?)
+                   [(PLAYING)	"|>"]
+                   [(PAUSED)	"||"]
+                   [(STOPPED)	"[]"]
+                   [else	"??"]))
+      (wnoutrefresh controls-window))
+
+    (define (draw-tags)
+      (let ([tags (controller 'cached-tags?)])
         (werase tags-window)
         (unless (null? tags)
           (let* ([label-len
@@ -160,118 +149,149 @@
                 (loop (cdr ts) (+ i 1))))))
         (wnoutrefresh tags-window)))
 
-    (define draw-timer
-      (lambda ()
-        (define pos (controller 'cached-pos?))
-        (define len (controller 'cached-len?))
+    (define (draw-timer)
+      (let ([pos (controller 'cached-pos?)]
+            [len (controller 'cached-len?)])
         (werase timer-window)
         (mvwaddstr timer-window
                    0 0 (if pos
-                          (seconds->string pos)
-                          "-"))
+                           (seconds->string pos)
+                           "-"))
         (when len
           (waddstr timer-window " / ")
           (waddstr timer-window (seconds->string len)))
         (wnoutrefresh timer-window)))
 
-    (define draw-tracks
-      (lambda ()
-        (draw-list
-          playlist-window
-          (controller 'cached-tracks?)
-          (controller 'cached-cursor?))))
+    (define (draw-tracks)
+      (draw-list
+        playlist-window
+        (controller 'cached-tracks?)
+        (controller 'cached-cursor?)))
 
-    (define draw-vfs
-      (lambda ()
-        (define vpath (controller 'cached-vpath?))
-        (if vpath
-            (begin
-              (mvwaddch stdscr 0 1 ACS_RTEE)
-              (waddstr stdscr (safe-substring (apply string-join "/" vpath) 0 (- COLS 5)))
-              (waddch stdscr ACS_LTEE)
-              (whline stdscr ACS_HLINE (- COLS 1 (getcurx stdscr))))
-            (mvwhline stdscr 0 1 ACS_HLINE (- COLS 2))
-            )
-        (wnoutrefresh stdscr)))
+    (define (draw-vfs)
+      (cond
+        [(controller 'cached-vpath?) =>
+         (lambda (vpath)
+           (mvwaddch stdscr 0 1 ACS_RTEE)
+           (waddstr stdscr (safe-substring (apply string-join "/" vpath) 0 (- COLS 5)))
+           (waddch stdscr ACS_LTEE)
+           (whline stdscr ACS_HLINE (- COLS 1 (getcurx stdscr))))]
+        [else
+          (mvwhline stdscr 0 1 ACS_HLINE (- COLS 2))])
+         (wnoutrefresh stdscr))
 
-    (define server-msg-handler
-      (lambda (msg)
-        (case (command msg)
-          [(LEN POS)
-           (draw-timer)]
-          [(STATE)
-           (draw-controls)
-           (draw-timer)
-           (draw-tags)
-           ]
-          [(TAGS)
-           (draw-tags)]
-          [(TRACKS)
-           (draw-tracks)]
-          [(VFS)
-           (draw-vfs)
-           (controller 'tracks?)]
-          )
-        (when debug
-          (draw-msg msg))
-        (doupdate)))
+    (define (char->pea-command ch)
+      (case ch
+        [(#\newline)
+         (case (controller 'cached-type?)
+           [(DIR M3U PLS)
+            'enter!]
+           [(AUDIO VIDEO)
+            'play!])]
+        [(#\h)
+         'pop!]
+        [(#\H)
+         'root!]
+        [(#\t #\space)
+         'toggle!]
+        [(#\s #\q)
+         'stop!]
+        [(#\j)
+         '(move! 1)]
+        [(#\k)
+         '(move! -1)]
+        [(#\J)
+         '(move! 10)]
+        [(#\K)
+         '(move! -10)]
+        [else
+          #f]))
 
-    (define char->pea-command
-      (lambda (ch controller)
-        ;; TODO modify keymap based on pea state.
+    (case-lambda
+      [(msg)
+       (case msg
+         [(create)
+          (set! controls-window (newwin 1 2 1 1))
+          (set! timer-window (newwin 1 19 1 4))
+          (set! tags-window (newwin (- LINES 3) (- (div COLS 2) 2) 2 1))
+          (set! playlist-window
+            (newwin (- LINES 2) (- (div COLS 2) 2) 1 (div COLS 2)))]
+         [(destroy)
+          (for-each
+            delwin
+            `(,controls-window ,playlist-window ,tags-window ,timer-window))])]
+      [(msg arg)
+       (case msg
+         [(handle-char)
+          (char->pea-command arg)]
+         [(server-msg)
+          (cond
+            [(list? arg)
+             (case (car arg)
+               [(LEN POS)
+                (draw-timer)]
+               [(STATE)
+                (draw-controls)
+                (draw-timer)
+                (draw-tags)
+                ]
+               [(TAGS)
+                (draw-tags)]
+               [(TRACKS)
+                (draw-tracks)]
+               [(VFS)
+                (draw-vfs)
+                (controller 'tracks?)]
+               )])
+          (doupdate)]
+         )])
+      ))
+
+(define main
+  (lambda ()
+    (my
+      [controller (make-pea-client ctrl-node service mcast-node service)]
+      [player-view (make-player-view controller)]
+      [protocol-view (make-protocol-view controller)]
+      [current-view player-view])
+
+    (define handle-global-key
+      (lambda (ch)
         (case ch
-          [(#\newline)
-           (case (controller 'cached-type?)
-             [(DIR M3U PLS)
-              'enter!]
-             [(AUDIO VIDEO)
-              'play!])]
-          [(#\h)
-           'pop!]
-          [(#\H)
-           'root!]
-          [(#\t #\space)
-           'toggle!]
-          [(#\s #\q)
-           'stop!]
-          [(#\j)
-           '(move! 1)]
-          [(#\k)
-           '(move! -1)]
-          [(#\J)
-           '(move! 10)]
-          [(#\K)
-           '(move! -10)]
-          [else
-            #f])))
-
-    (define display-pea-result
-      (lambda (res)
-        (if #f #f)))
+          [(#\x)
+           #;(ev-io-stop w)
+           (ev-break (evbreak 'ALL))]
+          [(16)		; ctrl-p
+           (unless (eq? current-view protocol-view)
+             (current-view 'destroy)
+             (set! current-view protocol-view)
+             (current-view 'create))]
+          )
+        (doupdate)))
 
     ;; Handle stdin commands.
     (ev-io 0 (evmask 'READ)
            (lambda (w revent)
              (let ([ch (integer->char (getch))])
                (cond
-                 [(char=? ch #\x)
-                  (ev-io-stop w)
-                  (ev-break (evbreak 'ALL))]
+                 [(current-view 'handle-char ch) =>
+                  (lambda (cmd)
+                    (controller cmd))]
                  [else
-                   (let ([cmd (char->pea-command ch controller)])
-                     ;; TODO display unknown key error?
-                     (when cmd
-                       (let ([res (controller cmd)])
-                         (when res
-                           (display-pea-result res)))))]))))
+                   (handle-global-key ch)]
+                 ))))
 
-    (controller `(client-set! ,server-msg-handler))
+    ;; Register the server message handler with the controller.
+    (controller
+      `(client-set!
+         ,(lambda (msg)
+            (current-view 'server-msg msg))))
+
+    (current-view 'create)
+    (doupdate)
     (ev-run)))
 
 (init-curses)
-(create-windows)
-(draw-border)
-(doupdate)
 
 (guard (e [else
             (endwin)
