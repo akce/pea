@@ -12,7 +12,8 @@
       [(controller)
        (make-omxplayer controller "/usr/bin/omxplayer" "both")]
       [(controller omxbin audio-dev)
-       (define base-command (string-append "exec " omxbin " -o " audio-dev " "))
+       ;; temporarily use key config until cursors keys work.
+       (define base-command (string-append "exec " omxbin " -o " audio-dev " --key-config ~/lib/pea/omxplayer.conf "))
        (define state 'STOPPED)
        (define omx-stdin #f)
 
@@ -59,6 +60,18 @@
             (omx-set! "p")
             ;; omxplayer gives no indication of changed state so assume success and return to controller.
             (controller state)]
+           [(seek!)
+            (case (cadr input)
+              ;; These use the custom key conf.
+              ;; My efforts to use arrows have failed so far.
+              [(30)		; right arrow
+               (omx-set! "5")]
+              [(-30)		; left arrow
+               (omx-set! "4")]
+              [(600)		; up arrow
+               (omx-set! "6")]
+              [(-600)		; down arrow
+               (omx-set! "3")])]
            [(stop!)
             ;; have omx-watcher notify the controller when stopped.
             (omx-set! "q")]))]))

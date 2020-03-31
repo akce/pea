@@ -315,6 +315,9 @@
              [else
                (player 'toggle!)
                'ACK])]
+          [(seek!)
+           (apply player input)
+           'ACK]
 
           ;;;; VFS navigation.
           [(enter!)

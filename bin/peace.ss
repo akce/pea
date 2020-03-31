@@ -212,6 +212,14 @@
          '(move! 10)]
         [(#\K)
          '(move! -10)]
+        [(#\ą)		; right arrow
+         '(seek! 30)]
+        [(#\Ą)		; left arrow
+         '(seek! -30)]
+        [(#\ă)		; up arrow
+         '(seek! 600)]
+        [(#\Ă)		; down arrow
+         '(seek! -600)]
         [else
           #f]))
 

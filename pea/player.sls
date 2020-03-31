@@ -63,6 +63,8 @@
         (case (car input)
           [(play!)
            (mpv-command "loadfile" (cadr input))]
+          [(seek!)
+           (mpv-command "seek" (number->string (cadr input)))]
           [(toggle!)
            (mpv-command "cycle" "pause")]
           [(stop!)
