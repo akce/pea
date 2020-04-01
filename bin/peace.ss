@@ -264,9 +264,9 @@
       ))
 
 (define main
-  (lambda ()
+  (lambda (ctrl-node ctrl-service mcast-node mcast-service)
     (my
-      [controller (make-pea-client ctrl-node service mcast-node service)]
+      [controller (make-pea-client ctrl-node ctrl-service mcast-node mcast-service)]
       [player-view (make-player-view controller)]
       [protocol-view (make-protocol-view controller)]
       [current-view player-view])
@@ -307,11 +307,14 @@
     (doupdate)
     (ev-run)))
 
+(unless (null? (command-line-arguments))
+  (set! ctrl-node (car (command-line-arguments))))
+
 (init-curses)
 
 (guard (e [else
             (endwin)
             (raise e)])
-  (main)
+  (main ctrl-node service mcast-node service)
   (endwin))
 
