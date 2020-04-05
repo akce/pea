@@ -119,9 +119,7 @@
       (wnoutrefresh global-window))
 
     (define (draw-msg-window)
-      (werase msg-window)
-      (draw-list msg-window msg-list (- (length msg-list) 1) draw-msg draw-msg)
-      (wnoutrefresh msg-window))
+      (draw-list msg-window msg-list (- (length msg-list) 1) draw-msg draw-msg))
 
     (case-lambda
       [(msg)
