@@ -139,7 +139,7 @@
           (set! msg-window #f)])]
       [(msg arg)
        (case msg
-         [(add-message)
+         [(client-command control-message mcast-message)
           (case (command arg)
             [(POS)
              ;; pos is special in that a great many of them are sent.
@@ -360,8 +360,8 @@
     (controller
       `(client-set!
          ,(lambda (msg)
-            (debug-view 'add-message msg)
-            (current-view 'server-msg msg)
+            (apply debug-view msg)
+            (current-view 'server-msg (cadr msg))
             (doupdate))))
 
     (current-view 'create)

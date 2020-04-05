@@ -125,7 +125,7 @@
           (when (and client client-msg)
             (client client-msg))))))
 
-  (define mcast-msg-handler
+  (define cache-message-data
     (lambda (model msg)
       (case (command msg)
         [(POS)
@@ -139,23 +139,24 @@
          (model-tags-set! model (state-info-track-tags msg))]
         [(TAGS)
          (model-tags-set! model (arg msg))]
+        [(TRACKS)
+         (model-tracks-set! model (arg msg))]
         [(VFS)
          (model-vpath-set! model (vfs-info-vpath msg))
          (model-cursor-set! model (vfs-info-cursor msg))
          (model-title-set! model (vfs-info-track-title msg))
          (model-type-set! model (vfs-info-track-type msg))]
-        )
-    msg))
+        )))
+
+  (define mcast-msg-handler
+    (lambda (model msg)
+      (cache-message-data model msg)
+      `(mcast-message ,msg)))
 
   (define control-msg-handler
     (lambda (model msg)
-      (case (command msg)
-        [(TRACKS)
-         (model-tracks-set! model (arg msg))]
-        [else
-          (mcast-msg-handler model msg)]
-        )
-      msg))
+      (cache-message-data model msg)
+      `(control-message ,msg)))
 
   ;; generic event watcher function.
   ;; 'read' data will be passed onto the handler.
