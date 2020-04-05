@@ -127,8 +127,10 @@
       [(msg)
        (case msg
          [(create)
-          (set! global-window (newwin 2 (- COLS 2) 1 1))
-          (set! msg-window (newwin (- LINES 4) (- COLS 2) 3 1))
+          (set! global-window (newwin 1 (- COLS 2) 1 1))
+          (set! msg-window (newwin
+                             (- LINES (getmaxy global-window) 2) (- COLS 2)
+                             2 1))
           (draw-global-window)
           (draw-msg-window)]
          [(destroy)
