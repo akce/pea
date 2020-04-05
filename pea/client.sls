@@ -81,17 +81,9 @@
   ;; handle messages from the ui.
   (define make-ui-handler
     (lambda (model ctrl-port . handlers)
-      (define client #f)
+      (define cc-watcher #f)
       (lambda (input)
         (case (command input)
-          [(client-set!)
-           ;; HMMM maybe use a separate 'debug-client-set! command.
-           (set! client (arg input))
-           (for-each
-             (lambda (h)
-               (h input))
-             handlers)
-           'ACK]
           [(cached-cursor?)
            (model-cursor model)]
           [(cached-len?)
@@ -108,10 +100,20 @@
            (model-type model)]
           [(cached-vpath?)
            (model-vpath model)]
+          [(server-msg-handler!)
+           (for-each
+             (lambda (h)
+               (h input))
+             handlers)
+           'ACK]
+          [(client-command-watcher!)
+           ;; Lets interested client UIs see commands sent to server.
+           (set! cc-watcher (arg input))
+           'ACK]
           [else
-            ;; TODO verify command.
-            (when client
-              (client `(client-command ,input)))
+            ;; TODO verify 'input' command.
+            (when cc-watcher
+              (cc-watcher `(client-command ,input)))
             (write-now input ctrl-port)
             #f]))))
 
@@ -122,7 +124,7 @@
       (lambda (input)
         (let ([client-msg
                 (case (command input)
-                  [(client-set!)
+                  [(server-msg-handler!)
                    (set! client (arg input))
                    #f]
                   [else

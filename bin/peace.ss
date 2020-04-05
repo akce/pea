@@ -358,10 +358,17 @@
 
     ;; Register the server message handler with the controller.
     (controller
-      `(client-set!
+      `(server-msg-handler!
          ,(lambda (msg)
             (apply debug-view msg)
             (current-view 'server-msg (cadr msg))
+            (doupdate))))
+
+    ;; Watch outgoing commands. Allows the debug view to see everything.
+    (controller
+      `(client-command-watcher!
+         ,(lambda (msg)
+            (apply debug-view msg)
             (doupdate))))
 
     (current-view 'create)
