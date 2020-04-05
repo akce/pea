@@ -81,9 +81,12 @@
   ;; handle messages from the ui.
   (define make-ui-handler
     (lambda (model ctrl-port . handlers)
+      (define client #f)
       (lambda (input)
         (case (command input)
           [(client-set!)
+           ;; HMMM maybe use a separate 'debug-client-set! command.
+           (set! client (arg input))
            (for-each
              (lambda (h)
                (h input))
@@ -107,6 +110,8 @@
            (model-vpath model)]
           [else
             ;; TODO verify command.
+            (when client
+              (client `(client-command ,input)))
             (write-now input ctrl-port)
             #f]))))
 
