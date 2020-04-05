@@ -42,7 +42,7 @@
                ;; vfs/playlist
                #f #f #f #f
                ;; track/playback
-               #f #f #f #f
+               #f #f #f '()
                ;; tracks
                #f)))))
 

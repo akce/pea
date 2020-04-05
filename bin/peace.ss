@@ -97,16 +97,65 @@
     (guard (e [else str])
       (substring str start end))))
 
-(define make-protocol-view
+(define make-debug-view
   (lambda (controller)
-    ;; Display the object (or as much as will fit) on the last line of the screen.
-    (lambda (msg)
-      (let ([y (- LINES 2)]
-            [msg-str (safe-substring (object->string msg) 0 (- COLS 2))])
-        (mvwaddstr stdscr y 1 msg-str)
-        (wclrtoeol stdscr)
-        (mvwaddch stdscr y (- COLS 1) ACS_VLINE)
-        (wnoutrefresh stdscr)))))
+    (my
+      [last-pos #f]
+      [msg-list '()]
+      [global-window #f]
+      [msg-window #f]
+      )
+    ;; Display the object (or as much as will fit) on the line of the screen.
+    (define (draw-msg item i w)
+      (mvwaddstr msg-window i 0
+                 (safe-substring (object->string item) 0 w)))
+
+    (define (draw-global-window)
+      (werase global-window)
+      (when last-pos
+        (mvwaddstr
+          global-window 0 0
+          (safe-substring (object->string last-pos) 0 (getmaxx global-window))))
+      (wnoutrefresh global-window))
+
+    (define (draw-msg-window)
+      (werase msg-window)
+      (draw-list msg-window msg-list (- (length msg-list) 1) draw-msg draw-msg)
+      (wnoutrefresh msg-window))
+
+    (case-lambda
+      [(msg)
+       (case msg
+         [(create)
+          (set! global-window (newwin 2 (- COLS 2) 1 1))
+          (set! msg-window (newwin (- LINES 4) (- COLS 2) 3 1))
+          (draw-global-window)
+          (draw-msg-window)]
+         [(destroy)
+          (for-each
+            delwin
+            `(,global-window ,msg-window))
+          (set! global-window #f)
+          (set! msg-window #f)])]
+      [(msg arg)
+       (case msg
+         [(add-message)
+          (case (command arg)
+            [(POS)
+             ;; pos is special in that a great many of them are sent.
+             (set! last-pos arg)
+             (when global-window
+               (draw-global-window))
+             ]
+            [else
+              (set! msg-list `(,@msg-list ,arg))
+              (when msg-window
+                (draw-msg-window))]
+            )]
+         [(handle-char)
+          #f]
+         )])
+    ))
 
 (define make-player-view
   (lambda (controller)
@@ -116,7 +165,7 @@
       [tags-window #f]
       [timer-window #f])
 
-    (define (draw-controls)
+    (define (draw-controls-window)
       (mvwaddstr controls-window
                  0 0
                  (case (controller 'cached-state?)
@@ -126,7 +175,7 @@
                    [else	"??"]))
       (wnoutrefresh controls-window))
 
-    (define (draw-tags)
+    (define (draw-tags-window)
       (let ([tags (controller 'cached-tags?)])
         (werase tags-window)
         (unless (null? tags)
@@ -145,7 +194,7 @@
                                     (safe-substring (cdr item) 0 tag-len))))))
         (wnoutrefresh tags-window)))
 
-    (define (draw-timer)
+    (define (draw-timer-window)
       (let ([pos (controller 'cached-pos?)]
             [len (controller 'cached-len?)])
         (werase timer-window)
@@ -158,7 +207,7 @@
           (waddstr timer-window (seconds->string len)))
         (wnoutrefresh timer-window)))
 
-    (define (draw-tracks)
+    (define (draw-playlist-window)
       (define (draw-item item i w)
         (mvwaddch playlist-window i 0 (get-filetype-char (cdr item)))
         (mvwaddstr playlist-window i 2
@@ -176,7 +225,7 @@
         (controller 'cached-cursor?)
         draw-item draw-selected-item))
 
-    (define (draw-vfs)
+    (define (draw-vfs-window)
       (cond
         [(controller 'cached-vpath?) =>
          (lambda (vpath)
@@ -231,7 +280,13 @@
           (set! timer-window (newwin 1 19 1 4))
           (set! tags-window (newwin (- LINES 3) (- (div COLS 2) 2) 2 1))
           (set! playlist-window
-            (newwin (- LINES 2) (- (div COLS 2) 2) 1 (div COLS 2)))]
+            (newwin (- LINES 2) (- (div COLS 2) 2) 1 (div COLS 2)))
+          (draw-controls-window)
+          (draw-timer-window)
+          (draw-tags-window)
+          (draw-playlist-window)
+          (draw-vfs-window)
+          ]
          [(destroy)
           (for-each
             delwin
@@ -245,21 +300,20 @@
             [(list? arg)
              (case (car arg)
                [(LEN POS)
-                (draw-timer)]
+                (draw-timer-window)]
                [(STATE)
-                (draw-controls)
-                (draw-timer)
-                (draw-tags)
+                (draw-controls-window)
+                (draw-timer-window)
+                (draw-tags-window)
                 ]
                [(TAGS)
-                (draw-tags)]
+                (draw-tags-window)]
                [(TRACKS)
-                (draw-tracks)]
+                (draw-playlist-window)]
                [(VFS)
-                (draw-vfs)
+                (draw-vfs-window)
                 (controller 'tracks?)]
-               )])
-          (doupdate)]
+               )])]
          )])
       ))
 
@@ -268,7 +322,7 @@
     (my
       [controller (make-pea-client ctrl-node ctrl-service mcast-node mcast-service)]
       [player-view (make-player-view controller)]
-      [protocol-view (make-protocol-view controller)]
+      [debug-view (make-debug-view controller)]
       [current-view player-view])
 
     (define handle-global-key
@@ -277,13 +331,17 @@
           [(#\x)
            #;(ev-io-stop w)
            (ev-break (evbreak 'ALL))]
-          [(16)		; ctrl-p
-           (unless (eq? current-view protocol-view)
+          [(#\D)
+           (unless (eq? current-view debug-view)
              (current-view 'destroy)
-             (set! current-view protocol-view)
+             (set! current-view debug-view)
              (current-view 'create))]
-          )
-        (doupdate)))
+          [(#\P)
+           (unless (eq? current-view player-view)
+             (current-view 'destroy)
+             (set! current-view player-view)
+             (current-view 'create))]
+          )))
 
     ;; Handle stdin commands.
     (ev-io 0 (evmask 'READ)
@@ -295,13 +353,16 @@
                     (controller cmd))]
                  [else
                    (handle-global-key ch)]
-                 ))))
+                 )
+               (doupdate))))
 
     ;; Register the server message handler with the controller.
     (controller
       `(client-set!
          ,(lambda (msg)
-            (current-view 'server-msg msg))))
+            (debug-view 'add-message msg)
+            (current-view 'server-msg msg)
+            (doupdate))))
 
     (current-view 'create)
     (doupdate)
