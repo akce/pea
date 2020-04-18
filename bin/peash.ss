@@ -1,7 +1,7 @@
-#! /usr/bin/chez-scheme --script
+#! /usr/bin/chez-scheme --program
 
-(suppress-greeting #t)
-(debug-on-exception #t)
+#;(suppress-greeting #t)
+#;(debug-on-exception #t)
 
 (import
   (rnrs)

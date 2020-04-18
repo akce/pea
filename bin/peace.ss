@@ -1,14 +1,14 @@
-#! /usr/bin/chez-scheme --script
+#! /usr/bin/chez-scheme --program
 
 ;; peace: the PEA Curses Experience.
 ;; An ncurses based UI for pea.
 
-(suppress-greeting #t)
-(debug-on-exception #t)
+#;(suppress-greeting #t)
+#;(debug-on-exception #t)
 
 (import
   (rnrs)
-  (only (chezscheme) list-tail)
+  (only (chezscheme) command-line-arguments list-tail)
   (ev)
   (ncurses)
   (pea client)

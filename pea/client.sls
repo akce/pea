@@ -4,6 +4,7 @@
   (export
     make-pea-client
     seconds->string
+    pad-num
     )
   (import
     (rnrs)
