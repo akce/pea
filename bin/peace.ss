@@ -295,7 +295,11 @@
       [(msg arg)
        (case msg
          [(handle-char)
-          (char->pea-command arg)]
+          (case (controller 'cached-state?)
+            [(ANNOUNCING)
+             'stop!]
+            [else
+              (char->pea-command arg)])]
          [(server-msg)
           (cond
             [(list? arg)
