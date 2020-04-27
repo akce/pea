@@ -142,12 +142,21 @@
   ;; (STOPPED) + PLAY -> PLAYING
   ;; (PLAYING) + PAUSE -> PAUSED
   ;;
+  ;; Announcements are for upcoming video tracks in continuous play only:
+  ;; (PLAYING + STOP) -> ANNOUNCING
+  ;; (ANNOUNCING) + STOP -> STOPPED
+  ;; (ANNOUNCING) + announce-delay timeout -> PLAY
+  ;; Announcement state allows to see the upcoming video trackname (and optionally cancel)
+  ;; before playback starts and the screen is filled/obscured with video.
+  ;;
   ;; Using define-enum here to help catch mis-typed symbols, but probably not needed in the long term.
   (define-enum pea-state
     ;; Intermediate, client requested states. These are internal and not multicast.
     [PAUSE	'PAUSE]		; Client requested pause.
     [PLAY	'PLAY]		; Client requested play.
     [STOP	'STOP]		; Client requested stop.
+    [ANNOUNCING 'ANNOUNCING]	; Announce the upcoming video track.
+				; Play next after delay unless cancelled via stop!.
     ;; End player states.
     [PAUSED	'PAUSED]	; Player state PAUSED.
     [PLAYING	'PLAYING]	; Player state PLAYING.
@@ -220,14 +229,16 @@
       ;; Do not send track record as scheme readers need to understand (import) the track record def.
       (define make-state-info
         (lambda ()
-          `(STATE
-             ;; pea-state
-             ,state
-             ;; Current track pos/length/tags. Can be #f if STOPPED.
-             ,track-pos
-             ,track-length
-             ,track-tags
-             )))
+          (case state
+            [(ANNOUNCING)
+             `(STATE ,state ,announce-delay ,(cursor-index cursor))]
+            [else
+              `(STATE ,state
+                 ;; Current track pos/length/tags. Can be #f if STOPPED.
+                 ,track-pos
+                 ,track-length
+                 ,track-tags
+                 )])))
 
       ;; Playlist state: vpath/index/title/type
       (define make-vfs-info
@@ -244,9 +255,6 @@
       ;; [return] result of (controller play!) or #f if nothing left in playlist.
       (define play-another
         (lambda ()
-          (define (start-play)
-            (set! state (pea-state STOPPED))	; set STOPPED as play! currently requires it.
-            (controller 'play!))
           (case state
             [(PLAYING)	; current mode is to keep playing, so try and move to the next track.
              (case (controller '(move! 1))
@@ -257,16 +265,18 @@
                      ;; For upcoming VIDEO tracks, announce the title, and set a timer before playing.
                      ;; This allows for cancellation of continuous play.
                      ;; HMMM should there be an ANNOUNCE state?
-                     (write-now `(ANNOUNCE ,announce-delay "Upcoming video" ,(track-title t)) mcast)
+                     (state-set! (pea-state ANNOUNCING))
+                     #;(write-now `(ANNOUNCE ,announce-delay "Upcoming video" ,(track-title t)) mcast)
                      (set! announce-timer
                        (ev-timer announce-delay 0
                                  (lambda (timer i)
                                    (set! announce-timer #f)
-                                   (start-play))))
-                     ]
+                                   (controller 'play!))))
+                     'ACK]
                     [else
                       ;; Otherwise, play immediately.
-                      (start-play)]))]
+                      (set! state (pea-state STOPPED))	; set STOPPED as play! currently requires it.
+                      (controller 'play!)]))]
                [else
                  ;; Nothing more in the playlist.
                  ;; HMMM should cursor move to position 0 before stopping?
@@ -282,10 +292,11 @@
         (case (command input)
           ;;;; Player commands.
           [(play!)
-           ;; For now, only allow PLAY from STOPPED state. In future, play might be able to interrupt
-           ;; any state to re-start or resume play or play from a new cursor position.
+           ;; For now, only allow PLAY from ANNOUNCING or STOPPED states. In
+           ;; future, play might be able to interrupt any state to re-start or
+           ;; resume play or play from a new cursor position.
            (case state
-             [(STOPPED)
+             [(ANNOUNCING STOPPED)
               (set! state (pea-state PLAY))
               ;; TODO check that play actually works.
               (player
@@ -296,28 +307,35 @@
               (cursor-save cursor)
               'ACK]
              [else
-               `(DOH "Can only play! from STOPPED state. Current state" ,state)])]
+               `(DOH "Can only play! from ANNOUNCING/STOPPED states. Current state" ,state)])]
           [(stop!)
            (case state
-             [(PLAY PLAYING PAUSING PAUSED)
-              (set! state (pea-state STOP))
+             [(ANNOUNCING)
               (when announce-timer
                 (ev-timer-stop announce-timer)
                 (set! announce-timer #f))
+              (state-set! (pea-state STOPPED))
+              'ACK]
+             [(PLAY PLAYING PAUSING PAUSED)
+              (set! state (pea-state STOP))
               (player 'stop!)
               'ACK]
              [else
                `(DOH "Cannot stop! from current state" ,state)])]
           [(toggle!)	; as in toggle pause.
            (case state
-             [(STOP STOPPED)
-              `(DOH "Cannot toggle! pause from current state" ,state)]
-             [else
+             [(PAUSED PLAYING)
                (player 'toggle!)
-               'ACK])]
+               'ACK]
+             [else
+              `(DOH "Cannot toggle! pause from current state" ,state)])]
           [(seek!)
-           (apply player input)
-           'ACK]
+           (case state
+             [(PAUSED PLAYING)
+              (apply player input)
+              'ACK]
+             [else
+              `(DOH "Cannot seek! from current state" ,state)])]
 
           ;;;; VFS navigation.
           [(enter!)
@@ -360,12 +378,12 @@
 
           ;;;; Player change state commands. Cache and multicast them.
           [(STOPPED)
+           ;; Reset track cache data.
+           (set! track-tags '())
+           (set! track-length #f)
+           (set! track-pos #f)
            (unless (play-another)
-             ;; Reset track cache data.
-             (set! track-tags '())
-             (set! track-length #f)
-             (set! track-pos #f))
-             (state-set! (pea-state STOPPED))]
+             (state-set! (pea-state STOPPED)))]
           [(PLAYING)
            (state-set! (pea-state PLAYING))]
           [(PAUSED)

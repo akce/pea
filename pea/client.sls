@@ -142,9 +142,15 @@
          (model-duration-set! model (arg msg))]
         [(STATE)
          (model-state-set! model (state-info-state msg))
-         (model-pos-set! model (state-info-track-pos msg))
-         (model-duration-set! model (state-info-track-length msg))
-         (model-tags-set! model (state-info-track-tags msg))]
+         (case (model-state model)
+           [(ANNOUNCING)
+             (model-pos-set! model #f)
+             (model-duration-set! model #f)
+             (model-tags-set! model '())]
+           [else
+             (model-pos-set! model (state-info-track-pos msg))
+             (model-duration-set! model (state-info-track-length msg))
+             (model-tags-set! model (state-info-track-tags msg))])]
         [(TAGS)
          (model-tags-set! model (arg msg))]
         [(TRACKS)

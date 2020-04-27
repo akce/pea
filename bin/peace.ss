@@ -169,10 +169,11 @@
       (mvwaddstr controls-window
                  0 0
                  (case (controller 'cached-state?)
-                   [(PLAYING)	"|>"]
-                   [(PAUSED)	"||"]
-                   [(STOPPED)	"[]"]
-                   [else	"??"]))
+                   [(PLAYING)		"|>"]
+                   [(PAUSED)		"||"]
+                   [(STOPPED)		"[]"]
+                   [(ANNOUNCING)	"**"]
+                   [else		"??"]))
       (wnoutrefresh controls-window))
 
     (define (draw-tags-window)
