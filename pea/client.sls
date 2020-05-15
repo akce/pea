@@ -16,12 +16,6 @@
 
   (define-record-type model
     (fields
-      ;; PEA server details, mostly if the client needs to reconnect.
-      [immutable	ctrl-node]
-      [immutable	ctrl-service]
-      [immutable	mcast-node]
-      [immutable	mcast-service]
-
       ;; VFS/playlist.
       [mutable		vpath]
       [mutable		cursor]
@@ -38,51 +32,69 @@
       )
     (protocol
       (lambda (new)
-        (lambda (ctrl-node ctrl-service mcast-node mcast-service)
-          (new ctrl-node ctrl-service mcast-node mcast-service
-               ;; vfs/playlist
-               #f #f #f #f
-               ;; track/playback
-               #f #f #f '()
-               ;; tracks
-               #f)))))
+        (lambda ()
+          (new
+            ;; vfs/playlist
+            #f #f #f #f
+            ;; track/playback
+            #f #f #f '()
+            ;; tracks
+            #f)))))
 
   (define make-pea-client
-    (lambda (ctrl-node ctrl-service mcast-node mcast-service)
+    (lambda (mcast-node mcast-service)
+      ;; Store config in the model and connect the multicast socket.
+      ;; There shouldn't be a problem on the multicast, it'll be used to watch
+      ;; for pea servers coming online (via their ahoj message).
+      ;; It'll be up to the UI if they want a control channel.
       (my
-        [model		(make-model ctrl-node ctrl-service mcast-node mcast-service)]
-        [ctrl-sock	(connect-client-socket
-                          ctrl-node ctrl-service
-                          (address-family inet) (socket-domain stream)
-                          (address-info v4mapped addrconfig) (ip-protocol tcp))]
+        [model		(make-model)]
         [mcast-sock	(connect-server-socket
                           mcast-node mcast-service
                           (address-family inet) (socket-domain datagram)
                           (address-info addrconfig numericserv)
                           (ip-protocol udp))]
-        [ctrl-port	(socket->port ctrl-sock)]
-        [mcast-port	(socket->port mcast-sock)]
-        [ctrl-handler	(make-msg-handler model control-msg-handler)]
-        [mcast-handler	(make-msg-handler model mcast-msg-handler)]
-        [ui-handler	(make-ui-handler model ctrl-port ctrl-handler mcast-handler)])
-
+        [mcast-handler	(make-server-message-handler model 'mcast-message)]
+        [ui-handler	(make-ui-handler model mcast-handler)])
       (mcast-add-membership mcast-sock mcast-node)
-
-      ;; Watch for PEA control port responses.
-      ;; Messages on the control port will only contain PEA server responses to ui commands.
-      (ev-io (socket-fd ctrl-sock) (evmask 'READ)
-             (make-watcher ctrl-handler ctrl-port ctrl-sock 'pea-control-client))
 
       ;; Watch for PEA multicast global status messages etc.
       (ev-io (socket-fd mcast-sock) (evmask 'READ)
-             (make-watcher mcast-handler mcast-port mcast-sock 'pea-mcast-client))
+        (make-socket-reader mcast-handler 'pea-mcast-client mcast-sock))
 
       ui-handler))
 
   ;; handle messages from the ui.
   (define make-ui-handler
-    (lambda (model ctrl-port . handlers)
-      (define cc-watcher #f)
+    (lambda (model mcast-handler)
+      (my
+        ;; Even though a control connection is optional, always create a control handler.
+        ;; It means the UI can register a control message handler independant of whether
+        ;; a control connection exists at the time.
+        ;; (This is due to the handler storing the reference to the UI.)
+        [ctrl-handler	(make-server-message-handler model 'control-message)]
+        [cc-watcher	#f]
+        [ctrl-sock	#f]
+        [ctrl-port	#f])
+
+      (define connect-control
+        (lambda (ctrl-node ctrl-service)
+          ;; HMMM cache ctrl-node/ctrl-service to allow for a reconnect command?
+          (set! ctrl-sock
+            (connect-client-socket
+              ctrl-node ctrl-service
+              (address-family inet) (socket-domain stream)
+              (address-info v4mapped addrconfig) (ip-protocol tcp)))
+          (set! ctrl-port (socket->port ctrl-sock))
+
+          ;; Watch for PEA control port responses.
+          ;; Messages on the control port will only contain PEA server responses to ui commands.
+          (ev-io (socket-fd ctrl-sock) (evmask 'READ)
+                 (make-socket-reader ctrl-handler 'pea-control-client ctrl-sock ctrl-port))
+
+          ;; TODO check for failure
+          'ACK))
+
       (lambda (input)
         (case (command input)
           [(cached-cursor?)
@@ -101,13 +113,15 @@
            (model-type model)]
           [(cached-vpath?)
            (model-vpath model)]
-          [(server-msg-handler!)
+          [(set-server-msg-handler!)
+           ;; binds the client UI to the multicast and control message receivers.
            (for-each
-             (lambda (h)
-               (h input))
-             handlers)
+             (lambda (receiver)
+               (receiver input)) (list mcast-handler ctrl-handler))
            'ACK]
-          [(client-command-watcher!)
+          [(make-control-connection!)
+           (connect-control (cadr input) (caddr input))]
+          [(set-client-command-watcher!)
            ;; Lets interested client UIs see commands sent to server.
            (set! cc-watcher (arg input))
            'ACK]
@@ -115,24 +129,26 @@
             ;; TODO verify 'input' command.
             (when cc-watcher
               (cc-watcher `(client-command ,input)))
-            (write-now input ctrl-port)
+            ;; HMMM have a specific send command so that unknown/malformed messages aren't sent?
+            ;; HMMM it'd also save some processing power to put this before the set-*! messages.
+            (when ctrl-port
+              (write-now input ctrl-port))
             #f]))))
 
-  (define make-msg-handler
-    (lambda (model msg-handler)
-      (my
-        [client	#f])
+  ;; forwards messages received from the server to the ui.
+  (define make-server-message-handler
+    (lambda (model source-tag)
+      (define ui #f)
       (lambda (input)
-        (let ([client-msg
-                (case (command input)
-                  [(server-msg-handler!)
-                   (set! client (arg input))
-                   #f]
-                  [else
-                    (msg-handler model input)])])
-          (when (and client client-msg)
-            (client client-msg))))))
+        (case (command input)
+          [(set-server-msg-handler!)
+           (set! ui (arg input))]
+          [else
+            (cache-message-data model input)
+            (when ui
+              (ui `(,source-tag ,input)))]))))
 
+  ;; extract and save useful data received from pea-server.
   (define cache-message-data
     (lambda (model msg)
       (case (command msg)
@@ -162,35 +178,30 @@
          (model-type-set! model (vfs-info-track-type msg))]
         )))
 
-  (define mcast-msg-handler
-    (lambda (model msg)
-      (cache-message-data model msg)
-      `(mcast-message ,msg)))
-
-  (define control-msg-handler
-    (lambda (model msg)
-      (cache-message-data model msg)
-      `(control-message ,msg)))
-
-  ;; generic event watcher function.
-  ;; 'read' data will be passed onto the handler.
-  (define make-watcher
-    (lambda (handler port sock error-id)
-      (lambda (w revent)
-        (let loop ([data (read-trim-right port)])
-          (cond
-            [(eof-object? data)
-             (ev-io-stop w)
-             (socket-shutdown sock (shutdown-method read write))
-             (socket-close sock)
-             (close-port port)
-             ;; TODO try re-open at intervals.
-             (error error-id "remote socket closed")]
-            [else
-              (handler data)
-              ;; drain input port.
-              (when (input-port-ready? port)
-                (loop (read-trim-right port)))])))))
+  ;; Read scheme datums from socket and pass onto handler function.
+  (define make-socket-reader
+    (case-lambda
+      [(handler error-id sock)
+       (make-socket-reader handler error-id sock (socket->port sock))]
+      [(handler error-id sock port)
+       (lambda (w revent)
+         (let loop ([data (read-trim-right port)])
+           (cond
+             [(eof-object? data)
+              ;; Remote has closed, so some of this is probably unnecessary but isn't harmful either.
+              (socket-shutdown sock (shutdown-method read write))
+              (socket-close sock)
+              (close-port port)
+              ;; Notify UI of server end. It's up to them whether to reconnect or exit.
+              (handler '(BYE "pea server closed connection"))
+              ;; TODO cleanup ev-io watcher things.
+              (ev-io-stop w)
+              ]
+             [else
+               (handler data)
+               ;; drain input port.
+               (when (input-port-ready? port)
+                 (loop (read-trim-right port)))])))]))
 
   ;;;; Client util functions.
   ;; These could be useful to multiple clients so could be moved into a (client util) lib.

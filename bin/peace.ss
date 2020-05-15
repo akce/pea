@@ -300,7 +300,7 @@
              'stop!]
             [else
               (char->pea-command arg)])]
-         [(server-msg)
+         [(mcast-message control-message)
           (cond
             [(list? arg)
              (case (car arg)
@@ -317,15 +317,19 @@
                 (draw-playlist-window)]
                [(VFS)
                 (draw-vfs-window)
-                (controller 'tracks?)]
-               )])]
+                (controller 'tracks?)])]
+            #;[else
+              ;; Otherwise arg is a singleton, most likely ACK.
+              ;; HMMM Maybe everything (including ACKs) should be in a list?
+              (if #f #f)]
+          )]
          )])
       ))
 
 (define main
-  (lambda (ctrl-node ctrl-service mcast-node mcast-service)
+  (lambda (mcast-node mcast-service ctrl-node ctrl-service)
     (my
-      [controller (make-pea-client ctrl-node ctrl-service mcast-node mcast-service)]
+      [controller (make-pea-client mcast-node mcast-service)]
       [player-view (make-player-view controller)]
       [debug-view (make-debug-view controller)]
       [current-view player-view])
@@ -361,23 +365,26 @@
                  )
                (doupdate))))
 
-    ;; Register the server message handler with the controller.
+    ;; Register our server message handler with the controller.
     (controller
-      `(server-msg-handler!
+      `(set-server-msg-handler!
          ,(lambda (msg)
             (apply debug-view msg)
-            (current-view 'server-msg (cadr msg))
+            ;; TODO review this 'source-tag (input) format.
+            ;; Note: (car msg) == 'mcast-message | 'control-message
+            (current-view (car msg) (cadr msg))
             (doupdate))))
 
     ;; Watch outgoing commands. Allows the debug view to see everything.
     (controller
-      `(client-command-watcher!
+      `(set-client-command-watcher!
          ,(lambda (msg)
             (apply debug-view msg)
             (doupdate))))
 
     (current-view 'create)
     (doupdate)
+    (controller `(make-control-connection! ,ctrl-node ,ctrl-service))
     (ev-run)))
 
 (unless (null? (command-line-arguments))
@@ -388,6 +395,6 @@
 (guard (e [else
             (endwin)
             (raise e)])
-  (main ctrl-node service mcast-node service)
+  (main mcast-node service ctrl-node service)
   (endwin))
 
