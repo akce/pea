@@ -85,15 +85,21 @@
               ctrl-node ctrl-service
               (address-family inet) (socket-domain stream)
               (address-info v4mapped addrconfig) (ip-protocol tcp)))
-          (set! ctrl-port (socket->port ctrl-sock))
+          (when cc-watcher
+            (cc-watcher `(debug (connect-control ,ctrl-node ,ctrl-service))))
+          (cond
+            [ctrl-sock
+              (set! ctrl-port (socket->port ctrl-sock))
 
-          ;; Watch for PEA control port responses.
-          ;; Messages on the control port will only contain PEA server responses to ui commands.
-          (ev-io (socket-fd ctrl-sock) (evmask 'READ)
-                 (make-socket-reader ctrl-handler 'pea-control-client ctrl-sock ctrl-port))
-
-          ;; TODO check for failure
-          'ACK))
+              ;; Watch for PEA control port responses.
+              ;; Messages on the control port will only contain PEA server responses to ui commands.
+              (ev-io (socket-fd ctrl-sock) (evmask 'READ)
+                     (make-socket-reader ctrl-handler 'pea-control-client ctrl-sock ctrl-port))
+              'ACK]
+            [else
+                ;; TODO handle failure. ie, client waits for AHOJ message from mcast.
+                'DOH])
+          ))
 
       (lambda (input)
         (case (command input)

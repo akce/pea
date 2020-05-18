@@ -139,7 +139,7 @@
           (set! msg-window #f)])]
       [(msg arg)
        (case msg
-         [(client-command control-message mcast-message)
+         [(client-command control-message mcast-message debug)
           (case (command arg)
             [(POS)
              ;; pos is special in that a great many of them are sent.
@@ -334,6 +334,10 @@
       [debug-view (make-debug-view controller)]
       [current-view player-view])
 
+    (define connect-control
+      (lambda ()
+        (controller `(make-control-connection! ,ctrl-node ,ctrl-service))))
+
     (define handle-global-key
       (lambda (ch)
         (case ch
@@ -371,8 +375,14 @@
          ,(lambda (msg)
             (apply debug-view msg)
             ;; TODO review this 'source-tag (input) format.
-            ;; Note: (car msg) == 'mcast-message | 'control-message
-            (current-view (car msg) (cadr msg))
+            ;; Note: msg-src == 'mcast-message | 'control-message
+            (let ([msg-src (car msg)]
+                  [msg-data (cadr msg)])
+              ;; TODO this needs to filter by host and should only be done when there isn't a connection.
+              ;; TODO The display should show that we're waiting for a control connection.
+              (when (and (eq? msg-src 'mcast-message) (eq? (command msg-data) 'AHOJ))
+                (connect-control))
+              (current-view msg-src msg-data))
             (doupdate))))
 
     ;; Watch outgoing commands. Allows the debug view to see everything.
@@ -384,7 +394,7 @@
 
     (current-view 'create)
     (doupdate)
-    (controller `(make-control-connection! ,ctrl-node ,ctrl-service))
+    (connect-control)
     (ev-run)))
 
 (unless (null? (command-line-arguments))
