@@ -21,16 +21,17 @@
 (define mcast-node "224.0.0.49")
 (define ctrl-node "localhost")
 
-(define init-curses
+(define draw-app-border
   (lambda ()
     (define app-name "The System v3.0")
-    (define app-border
-      (lambda ()
-        (box stdscr ACS_VLINE ACS_HLINE)
-        (mvwaddch stdscr (- LINES 1) (- COLS (string-length app-name) 3) ACS_RTEE)
-        (waddstr stdscr app-name)
-        (waddch stdscr ACS_LTEE)
-        (wnoutrefresh stdscr)))
+    (box stdscr ACS_VLINE ACS_HLINE)
+    (mvwaddch stdscr (- LINES 1) (- COLS (string-length app-name) 3) ACS_RTEE)
+    (waddstr stdscr app-name)
+    (waddch stdscr ACS_LTEE)
+    (wnoutrefresh stdscr)))
+
+(define init-curses
+  (lambda ()
 
     (setlocale LC_ALL "")
     (initscr)
@@ -41,7 +42,7 @@
     (curs-set 0)
     (use-default-colors)
 
-    (app-border)))
+    (draw-app-border)))
 
 #;(define audio-code (char->integer #\♫))
 (define audio-code (char->integer #\a))
@@ -354,6 +355,11 @@
              (current-view 'destroy)
              (set! current-view player-view)
              (current-view 'create))]
+          [(#\ƚ)	; KEY_RESIZE
+           (current-view 'destroy)
+           (erase)
+           (draw-app-border)
+           (current-view 'create)]
           )))
 
     ;; Handle stdin commands.
@@ -368,6 +374,14 @@
                    (handle-global-key ch)]
                  )
                (doupdate))))
+
+    ;; Set our own SIGWINCH handler so as to fake a libev stdin/READ event on window resize.
+    (ev-signal 28	; 28 = SIGWINCH on Linux.
+      (lambda (w rev)
+        (endwin)
+        (refresh)
+        (ungetch KEY_RESIZE)
+        (ev-feed-fd-event 0 (evmask 'READ))))
 
     ;; Register our server message handler with the controller.
     (controller
