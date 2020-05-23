@@ -243,13 +243,35 @@
       ;; Playlist state: vpath/index/title/type
       (define make-vfs-info
         (lambda ()
-          (let* ([i (cursor-index cursor)]
-                 [t (list-ref (vfs-tracks vfs) i)])
+          (let ([t (current-track)])
             `(VFS
                ,(vfs-vpath vfs)
-               ,i
+               ,(cursor-index cursor)
                ,(track-title t)
                ,(track-type t)))))
+
+      ;; [proc] current-track: return the track under the cursor.
+      (define current-track
+        (lambda ()
+          (list-ref (vfs-tracks vfs) (cursor-index cursor))))
+
+      ;; [proc] goto-next-media: goto the next media track.
+      ;; [return] next track or #f.
+      (define goto-next-media!
+        (lambda ()
+          (let loop ([pos (controller '(move! 1))])
+            (cond
+              [(eq? pos 'ACK)
+                (let ([t (current-track)])
+                  (case (track-type t)
+                    [(AUDIO VIDEO)
+                     t]
+                    [else
+                      (loop (controller '(move! 1)))]
+                    ))]
+              [else
+                #f]
+              ))))
 
       ;; [proc] play-another: attempt to play the next song in the current playlist.
       ;; [return] result of (controller play!) or #f if nothing left in playlist.
@@ -257,9 +279,9 @@
         (lambda ()
           (case state
             [(PLAYING)	; current mode is to keep playing, so try and move to the next track.
-             (case (controller '(move! 1))
-               [(ACK)
-                (let ([t (list-ref (vfs-tracks vfs) (cursor-index cursor))])
+             (let ([t (goto-next-media!)])
+               (cond
+                 [t
                   (case (track-type t)
                     [(VIDEO)
                      ;; For upcoming VIDEO tracks, announce the title, and set a timer before playing.
@@ -276,13 +298,16 @@
                     [else
                       ;; Otherwise, play immediately.
                       (set! state (pea-state STOPPED))	; set STOPPED as play! currently requires it.
-                      (controller 'play!)]))]
-               [else
-                 ;; Nothing more in the playlist.
-                 ;; HMMM should cursor move to position 0 before stopping?
-                 #f])]
+                      (controller 'play!)]
+                    )]
+                 [else
+                   ;; Nothing more in the playlist.
+                   ;; HMMM should cursor move to position 0 before stopping?
+                   #f]
+               ))]
             [else
-              #f])))
+              #f]
+            )))
 
       ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
       ;; The controller function itself.
@@ -303,7 +328,7 @@
                 'play!
                 (track-join-path
                   (vfs-current vfs)
-                  (list-ref (vfs-tracks vfs) (cursor-index cursor))))
+                  (current-track)))
               (cursor-save cursor)
               'ACK]
              [else
