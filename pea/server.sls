@@ -259,19 +259,23 @@
       ;; [return] next track or #f.
       (define goto-next-media!
         (lambda ()
-          (let loop ([pos (controller '(move! 1))])
+          (define (next! pos)
             (cond
-              [(eq? pos 'ACK)
+              [pos
                 (let ([t (current-track)])
                   (case (track-type t)
                     [(AUDIO VIDEO)
                      t]
                     [else
-                      (loop (controller '(move! 1)))]
+                      (next! (cursor-move! cursor 1))]
                     ))]
               [else
                 #f]
-              ))))
+              ))
+          (let ([i (next! (cursor-move! cursor 1))])
+            (when i
+              (ack-mcast (make-vfs-info)))
+            i)))
 
       ;; [proc] play-another: play the next media track in the current playlist.
       ;; [return] result of (controller play!) or #f if nothing left in playlist.
