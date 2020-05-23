@@ -5,7 +5,7 @@
   (pea vfs)
   (export
     make-vfs vfs? vfs-current vfs-tracks
-    vfs-enter! vfs-pop! vfs-root!
+    vfs-enter! vfs-pop! vfs-root! vfs-rebuild!
     vfs-vpath
 
     make-cursor cursor? cursor-index
@@ -77,17 +77,20 @@
     (lambda (vfs)
       (vfs-rebuild! vfs (list (car (reverse (vfs-crumbs vfs)))))))
 
-  ;; [proc] vfs-rebuild!: rebuild playlist using new set of crumbs.
+  ;; [proc] vfs-rebuild!: rebuild playlist using new set of crumbs, or reload existing list.
   ;; [return] current vpath.
   (define vfs-rebuild!
-    (lambda (vfs crumbs)
-      (let ([tracks (playlist-read (car crumbs))])
-        (if tracks
-            (begin
-              (vfs-crumbs-set! vfs crumbs)
-              (vfs-tracks-set! vfs tracks)
-              (vfs-vpath vfs))
-            (error #f "cannot enter! empty playlist" (vfs-vpath vfs))))))
+    (case-lambda
+      [(vfs)
+       (vfs-rebuild! vfs (vfs-crumbs vfs))]
+      [(vfs crumbs)
+       (let ([tracks (playlist-read (car crumbs))])
+         (if tracks
+             (begin
+               (vfs-crumbs-set! vfs crumbs)
+               (vfs-tracks-set! vfs tracks)
+               (vfs-vpath vfs))
+             (error #f "cannot enter! empty playlist" (vfs-vpath vfs))))]))
 
   ;;;; Cursor: pointer/selector of vfs tracks.
   (define-record-type cursor

@@ -263,6 +263,8 @@
          '(move! 10)]
         [(#\K)
          '(move! -10)]
+        [(#\r #\R)
+         '(refresh!)]
         [(#\ą)		; right arrow
          '(seek! 30)]
         [(#\Ą)		; left arrow

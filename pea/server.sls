@@ -429,6 +429,11 @@
            (vfs-root! vfs)
            (cursor-sync! cursor)
            (ack-mcast (make-vfs-info))]
+          [(refresh!)	; reload current vlist.
+           ;; This is a brute-force reload.
+           ;; It should (at some point) mcast only when there's changes.
+           (vfs-rebuild! vfs)
+           (ack-mcast (make-vfs-info))]
           ;; Server quit. Note the double exclamations: this is an important command!!
           [(quit!!)
            (ev-break (evbreak 'ALL))
