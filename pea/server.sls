@@ -28,12 +28,25 @@
     (only (chezscheme) display-condition)
     (pea player)
     (pea playlist)
-    (only (pea util) arg command define-enum my input-port-ready? read-trim-right write-now)
+    (only (pea util) arg command define-enum my input-port-ready? read-trim-right)
+    (rename
+      (pea util)
+      (write-now %write-now))
     (pea vfs)
     ;; 3rd party libs.
     (ev)
     (socket extended)
     )
+
+  (define write-now
+    (lambda (input port)
+      (case (command input)
+        [(POS)
+         (when (= (arg input) 0)
+           (display "> ")(display '(POS *))(newline))]
+        [else
+          (display "> ")(display input)(newline)])
+      (%write-now input port)))
 
   (define-record-type model
     (fields
@@ -320,6 +333,12 @@
       ;; The controller function itself.
       ;; It's really just a state transition table.
       (define (controller input)
+        (case (command input)
+          [(POS)
+           (when (= 0 (arg input))
+             (display "< ")(display '(POS *))(newline))]
+          [else
+            (display "< ")(display input)(newline)])
         ;; List these commands in alphabetic order within their groupings.
         (case (command input)
           ;;;; Player commands.
@@ -473,7 +492,6 @@
             [else
               ;; Allow server console control commands.
               ;; TODO use same exception handling from make-control-client.
-              (let ([msg (controller in)])
-                (when msg
-                  (write-now msg (current-output-port))))])))))
+              (controller in)]
+            )))))
   )
