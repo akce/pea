@@ -273,7 +273,7 @@
                 #f]
               ))))
 
-      ;; [proc] play-another: attempt to play the next song in the current playlist.
+      ;; [proc] play-another: play the next media track in the current playlist.
       ;; [return] result of (controller play!) or #f if nothing left in playlist.
       (define play-another
         (lambda ()
@@ -285,10 +285,9 @@
                   (case (track-type t)
                     [(VIDEO)
                      ;; For upcoming VIDEO tracks, announce the title, and set a timer before playing.
-                     ;; This allows for cancellation of continuous play.
-                     ;; HMMM should there be an ANNOUNCE state?
+                     ;; This allows for cancellation of continuous play and also a chance to see
+                     ;; the name of what's coming up (in the case where the UI is on the same display).
                      (state-set! (pea-state ANNOUNCING))
-                     #;(write-now `(ANNOUNCE ,announce-delay "Upcoming video" ,(track-title t)) mcast)
                      (set! announce-timer
                        (ev-timer announce-delay 0
                                  (lambda (timer i)
@@ -297,7 +296,7 @@
                      'ACK]
                     [else
                       ;; Otherwise, play immediately.
-                      (set! state (pea-state STOPPED))	; set STOPPED as play! currently requires it.
+                      (set! state (pea-state STOPPED))	; set STOPPED as play! requires it.
                       (controller 'play!)]
                     )]
                  [else
