@@ -301,7 +301,11 @@
                     )]
                  [else
                    ;; Nothing more in the playlist.
-                   ;; HMMM should cursor move to position 0 before stopping?
+                   ;; Move cursor back to first track before stopping...
+                   (unless (= (cursor-index cursor) 0)
+                     ;; ...but only when there's more than 1 item in the playlist.
+                     (cursor-set! cursor 0)
+                     (ack-mcast (make-vfs-info)))
                    #f]
                ))]
             [else
