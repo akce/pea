@@ -341,6 +341,15 @@
       (lambda ()
         (controller `(make-control-connection! ,ctrl-node ,ctrl-service))))
 
+    (define set-current-view!
+      (lambda (new-view)
+        (unless (eq? current-view new-view)
+          (current-view 'destroy)
+          (set! current-view new-view)
+          (erase)
+          (draw-app-border)
+          (current-view 'create))))
+
     (define handle-global-key
       (lambda (ch)
         (case ch
@@ -348,15 +357,9 @@
            #;(ev-io-stop w)
            (ev-break (evbreak 'ALL))]
           [(#\D)
-           (unless (eq? current-view debug-view)
-             (current-view 'destroy)
-             (set! current-view debug-view)
-             (current-view 'create))]
+           (set-current-view! debug-view)]
           [(#\P)
-           (unless (eq? current-view player-view)
-             (current-view 'destroy)
-             (set! current-view player-view)
-             (current-view 'create))]
+           (set-current-view! player-view)]
           [(#\ƚ)	; KEY_RESIZE
            (current-view 'destroy)
            (erase)
