@@ -125,6 +125,9 @@
              ;; Assume that play was manually stopped so generate a fake stop! command otherwise
              ;; continuous play would just keep going.
              ;; This is safe to do as mpv-stop won't send another idle at this point.
+             ;; NB: Checking current-pos against total-duration doesn't take into account a user move!
+             ;; operation so this could do with a rethink at some point.
+             ;; However, this only affects mpv video tracks, so acceptable for now.
              (controller 'stop!))
            (controller 'STOPPED)]
           [(= eid (mpv-event-type playback-restart))

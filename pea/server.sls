@@ -290,6 +290,16 @@
               (ack-mcast (make-vfs-info)))
             i)))
 
+      (define announce-track
+        (lambda ()
+          (state-set! (pea-state ANNOUNCING))
+          (set! announce-timer
+            (ev-timer announce-delay 0
+                      (lambda (timer i)
+                        (set! announce-timer #f)
+                        (controller 'play!))))
+          'ACK))
+
       ;; [proc] play-another: play the next media track in the current playlist.
       ;; [return] result of (controller play!) or #f if nothing left in playlist.
       (define play-another
@@ -304,13 +314,7 @@
                      ;; For upcoming VIDEO tracks, announce the title, and set a timer before playing.
                      ;; This allows for cancellation of continuous play and also a chance to see
                      ;; the name of what's coming up (in the case where the UI is on the same display).
-                     (state-set! (pea-state ANNOUNCING))
-                     (set! announce-timer
-                       (ev-timer announce-delay 0
-                                 (lambda (timer i)
-                                   (set! announce-timer #f)
-                                   (controller 'play!))))
-                     'ACK]
+                     (announce-track)]
                     [else
                       ;; Otherwise, play immediately.
                       (set! state (pea-state STOPPED))	; set STOPPED as play! requires it.
@@ -343,11 +347,10 @@
         (case (command input)
           ;;;; Player commands.
           [(play!)
-           ;; For now, only allow PLAY from ANNOUNCING or STOPPED states. In
-           ;; future, play might be able to interrupt any state to re-start or
-           ;; resume play or play from a new cursor position.
+           ;; For now, only allow PLAY from ANNOUNCING, STOPPED or STOP states.
+           ;; The STOP state occurs when move! is selected during PLAYING.
            (case state
-             [(ANNOUNCING STOPPED)
+             [(ANNOUNCING STOPPED STOP)
               (set! state (pea-state PLAY))
               ;; TODO check that play actually works.
               (player
@@ -397,9 +400,27 @@
           [(move!)
            ;; Only signal if there was a change of position.
            (let ([new-pos (cursor-move! cursor (arg input))])
-             (if new-pos
+             (cond
+               [new-pos
                  (ack-mcast (make-vfs-info))
-                 '(DOH "move! cursor unchanged")))]
+                 (case state
+                   [(PLAYING)
+                    ;; Moving selection while playing will attempt to play the newly selected track.
+                    ;; NB: This doesn't work for mpv video as that driver has to guess the reason
+                    ;; for entering IDLE state. For now, it assumes user stop! rather than move!.
+                    (controller 'stop!)
+                    (case (track-type (current-track))
+                      [(AUDIO)
+                       (controller 'play!)]
+                      [(VIDEO)
+                       (announce-track)]
+                      [else
+                        'ACK])]
+                   [else
+                     'ACK])]
+               [else
+                 '(DOH "move! cursor unchanged")]
+               ))]
           [(pop!)
            (vfs-pop! vfs)
            (cursor-sync! cursor)
