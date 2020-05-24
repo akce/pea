@@ -101,7 +101,7 @@
   ;; Every type of file that PEA handles gets its own category here.
   ;; This will be the one place where file types are defined.
   (define uri-media-type
-    (let ([audio-hashes (map string-hash '("mp3" "flac" "aac" "wv" "wav" "ogg"))]
+    (let ([audio-hashes (map string-hash '("mp3" "flac" "aac" "m4a" "wv" "wav" "ogg"))]
           [video-hashes (map string-hash '("mp4" "mkv" "avi" "m4v"))]
           [m3u-hashes (map string-hash '("m3u" "m3u8"))]
           [pls-hash (string-hash "pls")]
