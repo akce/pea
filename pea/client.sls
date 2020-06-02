@@ -59,8 +59,8 @@
       (mcast-add-membership mcast-sock mcast-node)
 
       ;; Watch for PEA multicast global status messages etc.
-      (ev-io (socket-fd mcast-sock) (evmask 'READ)
-        (make-socket-reader mcast-handler 'pea-mcast-client mcast-sock))
+      (ev-io (socket-file-descriptor mcast-sock) (evmask 'READ)
+        (make-mcast-reader mcast-handler mcast-sock))
 
       ui-handler))
 
@@ -93,8 +93,8 @@
 
               ;; Watch for PEA control port responses.
               ;; Messages on the control port will only contain PEA server responses to ui commands.
-              (ev-io (socket-fd ctrl-sock) (evmask 'READ)
-                     (make-socket-reader ctrl-handler 'pea-control-client ctrl-sock ctrl-port))
+              (ev-io (socket-file-descriptor ctrl-sock) (evmask 'READ)
+                     (make-control-reader ctrl-handler 'pea-control-client ctrl-sock ctrl-port))
               'ACK]
             [else
                 ;; TODO handle failure. ie, client waits for AHOJ message from mcast.
@@ -185,10 +185,23 @@
         )))
 
   ;; Read scheme datums from socket and pass onto handler function.
-  (define make-socket-reader
+  (define make-mcast-reader
+    (lambda (handler sock)
+      (lambda (w revent)
+        (let ([pkt (socket-recvfrom sock 1024)])
+          ;; Check that source is one we're interested in.
+          (define peer (socket-recvfrom-peerinfo pkt (name-info nofqdn numericserv)))
+          (socket-recvfrom-free pkt)
+          ;; PEA multicast packets only contain one datum so there's no need to drain the port.
+          (handler
+            (read
+              (open-string-input-port (bytevector->string (car pkt) (native-transcoder)))))))))
+
+  ;; Read scheme datums from socket and pass onto handler function.
+  (define make-control-reader
     (case-lambda
       [(handler error-id sock)
-       (make-socket-reader handler error-id sock (socket->port sock))]
+       (make-control-reader handler error-id sock (socket->port sock))]
       [(handler error-id sock port)
        (lambda (w revent)
          (let loop ([data (read-trim-right port)])

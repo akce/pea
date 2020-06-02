@@ -78,7 +78,7 @@
       (ev-io 0 (evmask 'READ) (make-stdin-reader controller))
 
       ;; Create the Control socket event watcher.
-      (ev-io (socket-fd ctrl-sock) (evmask 'READ) (make-control-server controller ctrl-sock))
+      (ev-io (socket-file-descriptor ctrl-sock) (evmask 'READ) (make-control-server controller ctrl-sock))
 
       ;; Create the media player.
       (controller `(set-player! ,(make-player controller)))
@@ -97,9 +97,15 @@
         ;; HMMM add abstraction for all of client-* to (socket extended)?
         (let ([client-sock (socket-accept ctrl-sock)])
           ;; Create the client connect event watcher.
-          (ev-io (socket-fd client-sock) (evmask 'READ) (make-control-client controller client-sock))
-          ;; TODO show client address.
-          (display "new client ")(display (socket-fd client-sock))(newline)))))
+          (ev-io (socket-file-descriptor client-sock) (evmask 'READ) (make-control-client controller client-sock))
+          (let ([pi (socket-peerinfo client-sock (name-info nofqdn numericserv))])
+            (display "new client fd/host/port: ")
+            (display (socket-file-descriptor client-sock))
+            (display "/")
+            (display (car pi))
+            (display "/")
+            (display (cdr pi))
+            (newline))))))
 
   ;; [proc] make-control-client: makes a control client function suitable for use as an ev-io watcher.
   (define make-control-client
