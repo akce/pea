@@ -42,7 +42,7 @@
             #f)))))
 
   (define make-pea-client
-    (lambda (mcast-node mcast-service)
+    (lambda (mcast-node mcast-service mcast-ui-callback)
       ;; Store config in the model and connect the multicast socket.
       ;; There shouldn't be a problem on the multicast, it'll be used to watch
       ;; for pea servers coming online (via their ahoj message).
@@ -54,31 +54,29 @@
                           (address-family inet) (socket-domain datagram)
                           (address-info addrconfig numericserv)
                           (ip-protocol udp))]
-        [mcast-handler	(make-server-message-handler model 'mcast-message)]
-        [ui-handler	(make-ui-handler model mcast-handler)])
+        [ui-handler	(make-ui-handler model)])
       (mcast-add-membership mcast-sock mcast-node)
 
       ;; Watch for PEA multicast global status messages etc.
       (ev-io (socket-file-descriptor mcast-sock) (evmask 'READ)
-        (make-mcast-reader mcast-handler mcast-sock))
+        (make-mcast-ev-watcher
+          mcast-sock
+          (lambda (peer input)
+            (cache-message-data model input)
+            (mcast-ui-callback peer input))))
 
       ui-handler))
 
   ;; handle messages from the ui.
   (define make-ui-handler
-    (lambda (model mcast-handler)
+    (lambda (model)
       (my
-        ;; Even though a control connection is optional, always create a control handler.
-        ;; It means the UI can register a control message handler independant of whether
-        ;; a control connection exists at the time.
-        ;; (This is due to the handler storing the reference to the UI.)
-        [ctrl-handler	(make-server-message-handler model 'control-message)]
         [cc-watcher	#f]
         [ctrl-sock	#f]
         [ctrl-port	#f])
 
       (define connect-control
-        (lambda (ctrl-node ctrl-service)
+        (lambda (ctrl-node ctrl-service ctrl-ui-callback)
           ;; HMMM cache ctrl-node/ctrl-service to allow for a reconnect command?
           (set! ctrl-sock
             (connect-client-socket
@@ -86,7 +84,7 @@
               (address-family inet) (socket-domain stream)
               (address-info v4mapped addrconfig) (ip-protocol tcp)))
           (when cc-watcher
-            (cc-watcher `(debug (connect-control ,ctrl-node ,ctrl-service))))
+            (cc-watcher `(debug (connect-control ,ctrl-node ,ctrl-service ,ctrl-ui-callback))))
           (cond
             [ctrl-sock
               (set! ctrl-port (socket->port ctrl-sock))
@@ -94,7 +92,11 @@
               ;; Watch for PEA control port responses.
               ;; Messages on the control port will only contain PEA server responses to ui commands.
               (ev-io (socket-file-descriptor ctrl-sock) (evmask 'READ)
-                     (make-control-reader ctrl-handler 'pea-control-client ctrl-sock ctrl-port))
+                     (make-control-ev-watcher
+                       ctrl-sock ctrl-port
+                       (lambda (input)
+                         (cache-message-data model input)
+                         (ctrl-ui-callback input))))
               'ACK]
             [else
                 ;; TODO handle failure. ie, client waits for AHOJ message from mcast.
@@ -119,14 +121,8 @@
            (model-type model)]
           [(cached-vpath?)
            (model-vpath model)]
-          [(set-server-msg-handler!)
-           ;; binds the client UI to the multicast and control message receivers.
-           (for-each
-             (lambda (receiver)
-               (receiver input)) (list mcast-handler ctrl-handler))
-           'ACK]
           [(make-control-connection!)
-           (connect-control (cadr input) (caddr input))]
+           (connect-control (list-ref input 1) (list-ref input 2) (list-ref input 3))]
           [(set-client-command-watcher!)
            ;; Lets interested client UIs see commands sent to server.
            (set! cc-watcher (arg input))
@@ -140,19 +136,6 @@
             (when ctrl-port
               (write-now input ctrl-port))
             #f]))))
-
-  ;; forwards messages received from the server to the ui.
-  (define make-server-message-handler
-    (lambda (model source-tag)
-      (define ui #f)
-      (lambda (input)
-        (case (command input)
-          [(set-server-msg-handler!)
-           (set! ui (arg input))]
-          [else
-            (cache-message-data model input)
-            (when ui
-              (ui `(,source-tag ,input)))]))))
 
   ;; extract and save useful data received from pea-server.
   (define cache-message-data
@@ -185,8 +168,8 @@
         )))
 
   ;; Read scheme datums from socket and pass onto handler function.
-  (define make-mcast-reader
-    (lambda (handler sock)
+  (define make-mcast-ev-watcher
+    (lambda (sock handler)
       (lambda (w revent)
         (let ([pkt (socket-recvfrom sock 1024)])
           ;; Check that source is one we're interested in.
@@ -194,33 +177,31 @@
           (socket-recvfrom-free pkt)
           ;; PEA multicast packets only contain one datum so there's no need to drain the port.
           (handler
+            peer
             (read
               (open-string-input-port (bytevector->string (car pkt) (native-transcoder)))))))))
 
   ;; Read scheme datums from socket and pass onto handler function.
-  (define make-control-reader
-    (case-lambda
-      [(handler error-id sock)
-       (make-control-reader handler error-id sock (socket->port sock))]
-      [(handler error-id sock port)
-       (lambda (w revent)
-         (let loop ([data (read-trim-right port)])
-           (cond
-             [(eof-object? data)
-              ;; Remote has closed, so some of this is probably unnecessary but isn't harmful either.
-              (socket-shutdown sock (shutdown-method read write))
-              (socket-close sock)
-              (close-port port)
-              ;; Notify UI of server end. It's up to them whether to reconnect or exit.
-              (handler '(BYE "pea server closed connection"))
-              ;; TODO cleanup ev-io watcher things.
-              (ev-io-stop w)
-              ]
-             [else
-               (handler data)
-               ;; drain input port.
-               (when (input-port-ready? port)
-                 (loop (read-trim-right port)))])))]))
+  (define make-control-ev-watcher
+    (lambda (sock port handler)
+      (lambda (w revent)
+        (let loop ([data (read-trim-right port)])
+          (cond
+            [(eof-object? data)
+             ;; Remote has closed, so some of this is probably unnecessary but isn't harmful either.
+             (socket-shutdown sock (shutdown-method read write))
+             (socket-close sock)
+             (close-port port)
+             ;; Notify UI of server end. It's up to them whether to reconnect or exit.
+             (handler '(BYE "pea server closed connection"))
+             ;; TODO cleanup ev-io watcher things.
+             (ev-io-stop w)
+             ]
+            [else
+              (handler data)
+              ;; drain input port.
+              (when (input-port-ready? port)
+                (loop (read-trim-right port)))])))))
 
   ;;;; Client util functions.
   ;; These could be useful to multiple clients so could be moved into a (client util) lib.

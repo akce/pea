@@ -331,15 +331,33 @@
 
 (define main
   (lambda (mcast-node mcast-service ctrl-node ctrl-service)
-    (my
-      [controller (make-pea-client mcast-node mcast-service)]
-      [player-view (make-player-view controller)]
-      [debug-view (make-debug-view controller)]
-      [current-view player-view])
+
+    (define mcast-msg-watcher
+      (lambda (peer msg)
+        ;; TODO this needs to filter by peer host and should only be done when there isn't a connection.
+        ;; TODO The display should show that we're waiting for a control connection.
+        (debug-view 'mcast-message msg)
+        (when (eq? (command msg) 'AHOJ)
+          (connect-control))
+        ;; TODO review this 'source-tag (input) format.
+        (current-view 'mcast-message msg)
+        (doupdate)))
+
+    (define control-msg-watcher
+      (lambda (msg)
+        (debug-view 'control-message msg)
+        (current-view 'control-message msg)
+        (doupdate)))
 
     (define connect-control
       (lambda ()
-        (controller `(make-control-connection! ,ctrl-node ,ctrl-service))))
+        (controller `(make-control-connection! ,ctrl-node ,ctrl-service ,control-msg-watcher))))
+
+    (my
+      [controller (make-pea-client mcast-node mcast-service mcast-msg-watcher)]
+      [player-view (make-player-view controller)]
+      [debug-view (make-debug-view controller)]
+      [current-view player-view])
 
     (define set-current-view!
       (lambda (new-view)
@@ -387,22 +405,6 @@
         (refresh)
         (ungetch KEY_RESIZE)
         (ev-feed-fd-event 0 (evmask 'READ))))
-
-    ;; Register our server message handler with the controller.
-    (controller
-      `(set-server-msg-handler!
-         ,(lambda (msg)
-            (apply debug-view msg)
-            ;; TODO review this 'source-tag (input) format.
-            ;; Note: msg-src == 'mcast-message | 'control-message
-            (let ([msg-src (car msg)]
-                  [msg-data (cadr msg)])
-              ;; TODO this needs to filter by host and should only be done when there isn't a connection.
-              ;; TODO The display should show that we're waiting for a control connection.
-              (when (and (eq? msg-src 'mcast-message) (eq? (command msg-data) 'AHOJ))
-                (connect-control))
-              (current-view msg-src msg-data))
-            (doupdate))))
 
     ;; Watch outgoing commands. Allows the debug view to see everything.
     (controller
