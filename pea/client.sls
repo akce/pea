@@ -9,7 +9,7 @@
   (import
     (rnrs)
     (only (chezscheme) format)
-    (only (pea util) arg command my input-port-ready? read-trim-right write-now)
+    (only (pea util) arg command my input-port-ready? read-trim-right string-startswith? write-now)
     (ev)
     (socket extended)
     )
@@ -42,7 +42,7 @@
             #f)))))
 
   (define make-pea-client
-    (lambda (mcast-node mcast-service mcast-ui-callback)
+    (lambda (mcast-node mcast-service hostname mcast-ui-callback)
       ;; Store config in the model and connect the multicast socket.
       ;; There shouldn't be a problem on the multicast, it'll be used to watch
       ;; for pea servers coming online (via their ahoj message).
@@ -54,18 +54,56 @@
                           (address-family inet) (socket-domain datagram)
                           (address-info addrconfig numericserv)
                           (ip-protocol udp))]
-        [ui-handler	(make-ui-handler model)])
+        [ui-handler	(make-ui-handler model)]
+        [process-pkt?	(make-packet-filter hostname mcast-ui-callback)])
       (mcast-add-membership mcast-sock mcast-node)
 
-      ;; Watch for PEA multicast global status messages etc.
+      ;; Watch for PEA multicast messages from hostname only.
       (ev-io (socket-file-descriptor mcast-sock) (evmask 'READ)
-        (make-mcast-ev-watcher
-          mcast-sock
-          (lambda (peer input)
-            (cache-message-data model input)
-            (mcast-ui-callback peer input))))
+             (lambda (w revent)
+               (let ([pkt (socket-recvfrom mcast-sock 1024)])
+                 ;; Filter packets here so that unwanted ones are not cached. This will need to be revised
+                 ;; if clients want the option of changing the host they're connected to at runtime.
+                 (when (and (not (eof-object? pkt))
+                            (process-pkt? pkt))
+                   ;; PEA multicast datagrams only contain one datum so there's no need to drain the port.
+                   (let ([msg (read (open-string-input-port (bytevector->string (car pkt) (native-transcoder))))])
+                     (cache-message-data model msg)
+                     (mcast-ui-callback msg))))))
 
       ui-handler))
+
+  ;; [proc] make-packet-filter: create a predicate that matches hostname sockaddr.
+  ;; This caches the sockaddr for hostname and for all ignored hosts with the idea that a bytevector compare
+  ;; is cheaper than hostname lookups.
+  ;; This assumes that the number of pea servers multicasting in the LAN will be low.
+  ;; The ui-callback is only here for debug messages and can be removed if they're no longer desired.
+  (define make-packet-filter
+    (lambda (hostname ui-callback)
+      (define host-sockaddr #f)
+      (define seen-sockaddr '())
+      (lambda (pkt)
+        (cond
+          [host-sockaddr
+            (bytevector=? host-sockaddr (cdr pkt))]
+          [(memp (lambda (sa)
+                   (bytevector=? sa (cdr pkt))) seen-sockaddr)
+           ;; discard addresses that we've seen that aren't the host.
+           #f]
+          [else
+            (let ([peer (getnameinfo (cdr pkt) (name-info nofqdn numericserv))])
+              (cond
+                ;; Only checking the start of the string as getnameinfo will still return the localnet suffix.
+                ;; eg, "atlantis.localnet".
+                ;; This is despite the nofqdn flag...
+                [(string-startswith? (car peer) hostname)
+                 (set! host-sockaddr (cdr pkt))
+                 (ui-callback `(debug (hostname found ,hostname ,(car peer) ,host-sockaddr)))
+                 #t]
+                [else
+                  (ui-callback `(debug (hostname ignore ,hostname ,(car peer) ,host-sockaddr)))
+                  (set! seen-sockaddr (cons (cdr pkt) seen-sockaddr))
+                  #f]))]))))
 
   ;; handle messages from the ui.
   (define make-ui-handler
@@ -166,20 +204,6 @@
          (model-title-set! model (vfs-info-track-title msg))
          (model-type-set! model (vfs-info-track-type msg))]
         )))
-
-  ;; Read scheme datums from socket and pass onto handler function.
-  (define make-mcast-ev-watcher
-    (lambda (sock handler)
-      (lambda (w revent)
-        (let ([pkt (socket-recvfrom sock 1024)])
-          ;; Check that source is one we're interested in.
-          (define peer (socket-recvfrom-peerinfo pkt (name-info nofqdn numericserv)))
-          (socket-recvfrom-free pkt)
-          ;; PEA multicast packets only contain one datum so there's no need to drain the port.
-          (handler
-            peer
-            (read
-              (open-string-input-port (bytevector->string (car pkt) (native-transcoder)))))))))
 
   ;; Read scheme datums from socket and pass onto handler function.
   (define make-control-ev-watcher

@@ -9,7 +9,7 @@
     read-trim-right
     reverse-map
     slurp
-    string-join string-trim-both
+    string-join string-startswith? string-trim-both
     write-now
     )
   (import
@@ -168,6 +168,12 @@
                acc]
               [else
                 (loop (string-append acc sep (car rest)) (cdr rest))]))])))
+
+  ;; [proc] string-startswith?: tests whether str starts with prefix.
+  ;; This is a quick and dirty (read inefficient) version that uses irregex.
+  (define string-startswith?
+    (lambda (str prefix)
+      (irregex-match-data? (irregex-search `(w/case bos ,prefix) str))))
 
   ;; [proc] string-trim-both: kind of the same as that found in (srfi :152 strings)
   ;; Defined using irregex and only supports whitespace trimming.

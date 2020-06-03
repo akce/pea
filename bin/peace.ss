@@ -333,8 +333,7 @@
   (lambda (mcast-node mcast-service ctrl-node ctrl-service)
 
     (define mcast-msg-watcher
-      (lambda (peer msg)
-        ;; TODO this needs to filter by peer host and should only be done when there isn't a connection.
+      (lambda (msg)
         ;; TODO The display should show that we're waiting for a control connection.
         (debug-view 'mcast-message msg)
         (when (eq? (command msg) 'AHOJ)
@@ -354,7 +353,7 @@
         (controller `(make-control-connection! ,ctrl-node ,ctrl-service ,control-msg-watcher))))
 
     (my
-      [controller (make-pea-client mcast-node mcast-service mcast-msg-watcher)]
+      [controller (make-pea-client mcast-node mcast-service ctrl-node mcast-msg-watcher)]
       [player-view (make-player-view controller)]
       [debug-view (make-debug-view controller)]
       [current-view player-view])
