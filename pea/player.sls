@@ -22,11 +22,16 @@
         (case (machine-type)
           ;; assume that ARM is a Raspberry PI.
           [(arm32le)
+           (set-video-extensions! '("mp4" "mkv" "avi" "m4v"))
            (make-omxplayer controller)]
           [else
+            ;; Same extensions as omxplayer, but also webm.
+            (set-video-extensions! '("mp4" "mkv" "webm" "avi" "m4v"))
             mpv-player]))
 
       (define current-player #f)
+
+      (set-audio-extensions! '("mp3" "flac" "aac" "m4a" "wv" "wav" "ogg"))
 
       (lambda input
         (case (car input)
@@ -68,7 +73,11 @@
           [(toggle!)
            (mpv-command "cycle" "pause")]
           [(stop!)
-           (mpv-command "stop")]))))
+           (mpv-command "stop")]
+          [(get-audio-extensions)
+           '()]
+          [(get-video-extensions)
+           '()]))))
 
   (define make-mpv-event-handler
     (lambda (controller)

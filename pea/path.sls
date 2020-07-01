@@ -6,6 +6,7 @@
     make-uri uri? uri->string uri-scheme uri-authority uri-path uri-query uri-fragment
     uri-url? uri-absolute?
     uri-strip-file uri-media-type uri-join-path
+    set-audio-extensions! set-video-extensions!
     )
   (import
     (rnrs)
@@ -95,15 +96,50 @@
             (uri-fragment uri))
           uri)))
 
+  ;; [proc] uri-join-path: builds a real-path-uri based on a list of URIs.
+  ;; [return] URI of joined path.
+  ;; Used to build a real path when traversing playlists.
+  ;; An absolute path resets the return path, relative paths are appended.
+  (define uri-join-path
+    (lambda uris
+      (define (get-parts us parts)
+        (cond
+          [(null? us)
+           (reverse parts)]
+          [else
+            (let ([u (car us)])
+              (get-parts (cdr us)
+                         (if (uri-absolute? u)
+                             (list u)
+                             (cons u parts))))]))
+      (define (uri->path u)
+        (let ([s (uri->string u)])
+          (if (or (not s) (string=? "" s)) "." s)))
+      (make-uri
+        (apply string-join "/"
+               (map uri->path (get-parts uris '()))))))
+
   ;; [proc] uri-media-type: guess general media type based on uri info.
   ;; [return]: AUDIO VIDEO M3U PLS DIR or #f.
   ;;
   ;; Every type of file that PEA handles gets its own category here.
   ;; This will be the one place where file types are defined.
+
+  ;; Module private hashes. These are used by uri-media-type to determine file types. Being externally
+  ;; configurable allows (pea player) to customise filetypes based on formats actually supported.
+  (define audio-hashes '())
+  (define video-hashes '())
+
+  (define set-audio-extensions!
+    (lambda (exts)
+      (set! audio-hashes (map string-hash exts))))
+
+  (define set-video-extensions!
+    (lambda (exts)
+      (set! video-hashes (map string-hash exts))))
+
   (define uri-media-type
-    (let ([audio-hashes (map string-hash '("mp3" "flac" "aac" "m4a" "wv" "wav" "ogg"))]
-          [video-hashes (map string-hash '("mp4" "mkv" "avi" "m4v"))]
-          [m3u-hashes (map string-hash '("m3u" "m3u8"))]
+    (let ([m3u-hashes (map string-hash '("m3u" "m3u8"))]
           [pls-hash (string-hash "pls")]
           [dir-hash (string-hash "")])
       (lambda (uri . parent-uri)
@@ -133,27 +169,4 @@
                  'DIR]
                 [else
                   #f]))]))))
-
-  ;; [proc] uri-join-path: builds a real-path-uri based on a list of URIs.
-  ;; [return] URI of joined path.
-  ;; Used to build a real path when traversing playlists.
-  ;; An absolute path resets the return path, relative paths are appended.
-  (define uri-join-path
-    (lambda uris
-      (define (get-parts us parts)
-        (cond
-          [(null? us)
-           (reverse parts)]
-          [else
-            (let ([u (car us)])
-              (get-parts (cdr us)
-                         (if (uri-absolute? u)
-                             (list u)
-                             (cons u parts))))]))
-      (define (uri->path u)
-        (let ([s (uri->string u)])
-          (if (or (not s) (string=? "" s)) "." s)))
-      (make-uri
-        (apply string-join "/"
-               (map uri->path (get-parts uris '()))))))
   )
