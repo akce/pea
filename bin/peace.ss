@@ -320,7 +320,12 @@
                 (draw-playlist-window)]
                [(VFS)
                 (draw-vfs-window)
-                (controller 'tracks?)])]
+                (cond
+                  [(vfs-info-vpath arg) =>
+                   (lambda (vp)
+                     (controller 'tracks?))]
+                  [else
+                    (draw-playlist-window)])])]
             #;[else
               ;; Otherwise arg is a singleton, most likely ACK.
               ;; HMMM Maybe everything (including ACKs) should be in a list?

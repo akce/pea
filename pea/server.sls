@@ -261,13 +261,23 @@
 
       ;; Playlist state: vpath/index/title/type
       (define make-vfs-info
-        (lambda ()
-          (let ([t (current-track)])
-            `(VFS
-               ,(vfs-vpath vfs)
-               ,(cursor-index cursor)
-               ,(track-title t)
-               ,(track-type t)))))
+        (case-lambda
+          [()
+           (let ([t (current-track)])
+             `(VFS
+                ,(vfs-vpath vfs)
+                ,(cursor-index cursor)
+                ,(track-title t)
+                ,(track-type t)))]
+          [(arg)
+           ;; This is a bit of a cheat. The one argument form currently only indicates change of track only,
+           ;; not a vpath change so there's no need to check the value of arg.
+           (let ([t (current-track)])
+             `(VFS
+                #f
+                ,(cursor-index cursor)
+                ,(track-title t)
+                ,(track-type t)))]))
 
       ;; [proc] current-track: return the track under the cursor.
       (define current-track
@@ -293,7 +303,7 @@
               ))
           (let ([i (next! (cursor-move! cursor 1))])
             (when i
-              (ack-mcast (make-vfs-info)))
+              (ack-mcast (make-vfs-info 'track-changed)))
             i)))
 
       (define announce-track
@@ -332,7 +342,7 @@
                    (unless (= (cursor-index cursor) 0)
                      ;; ...but only when there's more than 1 item in the playlist.
                      (cursor-set! cursor 0)
-                     (ack-mcast (make-vfs-info)))
+                     (ack-mcast (make-vfs-info 'track-changed)))
                    #f]
                ))]
             [else
@@ -408,7 +418,7 @@
            (let ([new-pos (cursor-move! cursor (arg input))])
              (cond
                [new-pos
-                 (ack-mcast (make-vfs-info))
+                 (ack-mcast (make-vfs-info 'track-changed))
                  (case state
                    [(PLAYING)
                     ;; Moving selection while playing will attempt to play the newly selected track.

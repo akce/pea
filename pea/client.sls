@@ -5,6 +5,9 @@
     make-pea-client
     seconds->string
     pad-num
+    ;; Server message accessors.
+    state-info-state state-info-track-pos state-info-track-length state-info-track-tags
+    vfs-info-vpath vfs-info-cursor vfs-info-track-title vfs-info-track-type
     )
   (import
     (rnrs)
@@ -199,7 +202,11 @@
         [(TRACKS)
          (model-tracks-set! model (arg msg))]
         [(VFS)
-         (model-vpath-set! model (vfs-info-vpath msg))
+         ;; Only update vpath cache value if it has changed.
+         (cond
+           [(vfs-info-vpath msg) =>
+            (lambda (vp)
+              (model-vpath-set! model vp))])
          (model-cursor-set! model (vfs-info-cursor msg))
          (model-title-set! model (vfs-info-track-title msg))
          (model-type-set! model (vfs-info-track-type msg))]
