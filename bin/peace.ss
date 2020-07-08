@@ -64,7 +64,7 @@
 (define get-filetype-char
   (lambda (type)
     (case type
-      [(AUDIO)		audio-code]
+      [(AMIGA AUDIO)	audio-code]
       [(VIDEO)		video-code]
       [(DIR M3U PLS)	folder-code]
       [else		unknown-code])))
@@ -245,7 +245,7 @@
          (case (controller 'cached-type?)
            [(DIR M3U PLS)
             'enter!]
-           [(AUDIO VIDEO)
+           [(AMIGA AUDIO VIDEO)
             'play!])]
         [(#\h)
          'pop!]

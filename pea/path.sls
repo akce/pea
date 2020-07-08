@@ -6,7 +6,7 @@
     make-uri uri? uri->string uri-scheme uri-authority uri-path uri-query uri-fragment
     uri-url? uri-absolute?
     uri-strip-file uri-media-type uri-join-path
-    set-audio-extensions! set-video-extensions!
+    set-amiga-extensions! set-audio-extensions! set-video-extensions!
     )
   (import
     (rnrs)
@@ -120,15 +120,20 @@
                (map uri->path (get-parts uris '()))))))
 
   ;; [proc] uri-media-type: guess general media type based on uri info.
-  ;; [return]: AUDIO VIDEO M3U PLS DIR or #f.
+  ;; [return]: AMIGA AUDIO VIDEO M3U PLS DIR or #f.
   ;;
   ;; Every type of file that PEA handles gets its own category here.
   ;; This will be the one place where file types are defined.
 
   ;; Module private hashes. These are used by uri-media-type to determine file types. Being externally
   ;; configurable allows (pea player) to customise filetypes based on formats actually supported.
+  (define amiga-hashes '())
   (define audio-hashes '())
   (define video-hashes '())
+
+  (define set-amiga-extensions!
+    (lambda (exts)
+      (set! amiga-hashes (map string-hash exts))))
 
   (define set-audio-extensions!
     (lambda (exts)
@@ -160,6 +165,8 @@
                  'PLS]
                 [(eq? ext dir-hash)
                  'DIR]
+                [(memq ext amiga-hashes)
+                 'AMIGA]
                 ;; As a last resort there's a stat to see if it's a directory.
                 [(file-directory?
                    (uri-path

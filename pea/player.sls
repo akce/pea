@@ -4,6 +4,7 @@
   (import
     (rnrs)
     (only (chezscheme) machine-type)
+    (pea exewrap)
     (pea omxplayer)
     (pea path)
     (pea playlist)
@@ -15,8 +16,13 @@
   (define make-player
     (lambda (controller)
       ;; mpv is always used for AUDIO, and for VIDEO on non-raspberry pi machines.
-      (define mpv-player (mpv-init controller))
-      (define audio-player mpv-player)
+      (my
+        [mpv-player (mpv-init controller)]
+        [audio-player mpv-player]
+        ;; FIXME Note the call to pea-uade, it really should exist in a libexec dir and should support both
+        ;; FIXME script (.ss) or compiled versions of the program..
+        [amiga-player (make-exeplayer controller "pea-uade")]
+        [current-player #f])
 
       (define video-player
         (case (machine-type)
@@ -29,8 +35,7 @@
             (set-video-extensions! '("mp4" "mkv" "webm" "avi" "m4v"))
             mpv-player]))
 
-      (define current-player #f)
-
+      (set-amiga-extensions! '("mod" "hip" "hipc"))
       (set-audio-extensions! '("mp3" "flac" "aac" "m4a" "wv" "wav" "ogg"))
 
       (lambda input
@@ -44,6 +49,8 @@
                   audio-player]
                  [(VIDEO)
                   video-player]
+                 [(AMIGA)
+                  amiga-player]
                  [else
                    (error 'player "cannot play! unsupported track type" track)]))
              (current-player 'play! (uri->string (track-uri track))))]

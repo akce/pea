@@ -293,7 +293,7 @@
               [pos
                 (let ([t (current-track)])
                   (case (track-type t)
-                    [(AUDIO VIDEO)
+                    [(AMIGA AUDIO VIDEO)
                      t]
                     [else
                       (next! (cursor-move! cursor 1))]
@@ -426,7 +426,7 @@
                     ;; for entering IDLE state. For now, it assumes user stop! rather than move!.
                     (controller 'stop!)
                     (case (track-type (current-track))
-                      [(AUDIO)
+                      [(AMIGA AUDIO)
                        (controller 'play!)]
                       [(VIDEO)
                        (announce-track)]

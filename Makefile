@@ -37,6 +37,7 @@ all: install
 LIBS =	\
 	pea/client.sls		\
 	pea/omxplayer.sls	\
+	pea/exewrap.sls		\
 	pea/path.sls		\
 	pea/player.sls		\
 	pea/playlist.sls	\
@@ -47,7 +48,8 @@ LIBS =	\
 BINS =	\
 	bin/pead.ss	\
 	bin/peace.ss	\
-	bin/peash.ss
+	bin/peash.ss	\
+	bin/pea-uade.ss
 
 # installed lib sources.
 ILIBS = $(addprefix $(LIBDIR)/,$(LIBS))
