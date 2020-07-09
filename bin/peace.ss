@@ -13,13 +13,14 @@
   (ncurses)
   (pea client)
   (pea util)
+  (socket extended)
   )
 
 ;; TODO load config.
 
 (define service "49000")
 (define mcast-node "224.0.0.49")
-(define ctrl-node "localhost")
+(define ctrl-node (gethostname))
 
 (define draw-app-border
   (lambda ()
