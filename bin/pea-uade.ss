@@ -44,7 +44,7 @@
       (snd-pcm-sw-params-free swp))))
 
 (define (main)
-  (let ([handle (snd-pcm-open device (snd-pcm-stream 'playback) (snd-open-mode 'nonblock))]
+  (let ([handle (snd-pcm-open device 'playback 'nonblock)]
         [uade-state (uade-new-state)])
 
     (configure-hw-params handle (uade-get-sampling-rate uade-state))
