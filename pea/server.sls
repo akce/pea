@@ -139,12 +139,7 @@
               (guard
                 ;; TODO coding errors need to drop into debugger rather than report and continue.
                 (e [else
-                     ;; TODO define condition->string such that string quotes are escaped..
-                     ;; TODO then do some proper server logging..
-                     (display-condition e)
-                     ;; TODO and then define a client message type.
-                     (display-condition e client-port)
-                     (flush-output-port client-port)])
+                     (write-now (condition->doh e "pead") client-port)])
                 (let ([msg (controller input)])
                   (when msg
                     (write-now msg client-port)))
@@ -533,7 +528,9 @@
              (controller 'quit!!)]
             [else
               ;; Allow server console control commands.
-              ;; TODO use same exception handling from make-control-client.
-              (controller in)]
+              (guard
+                (e [else
+                     (write-now (condition->doh e "pead") (current-output-port))])
+                (controller in))]
             )))))
   )

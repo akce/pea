@@ -2,6 +2,7 @@
   (export
     arg
     command
+    condition->doh
     define-enum
     list-slice
     my
@@ -15,7 +16,7 @@
   (import
     (rnrs)
     (irregex)
-    (only (chezscheme) datum input-port-ready? list-head))
+    (only (chezscheme) datum display-condition input-port-ready? list-head))
 
   ;; [proc] arg: get first argument.
   ;; HMMM check return type is singleton?
@@ -33,6 +34,14 @@
          (car input)]
         [else
           input])))
+
+  ;; [proc] condition->doh: converts the display-condition message to a DOH message.
+  ;; [return] DOH message object.
+  (define condition->doh
+    (lambda (e msg)
+      (let-values ([(port getter) (open-string-output-port)])
+        (display-condition e port)
+        `(DOH ,msg ,(getter)))))
 
   ;; [syntax] define-enum: generates a syntax transformer that evaluates the value of an enum at compile time.
   ;; eg, using trace-define-syntax:

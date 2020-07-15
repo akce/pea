@@ -6,7 +6,7 @@
 
 (import
   (rnrs)
-  (only (chezscheme) display-condition flonum->fixnum)
+  (only (chezscheme) flonum->fixnum)
   (alsa pcm)
   (ev)
   (pea util)
@@ -153,7 +153,5 @@
   (e [else
        (write-now '(STOPPED) (current-output-port))
        ;; Encapsulate exception in a DOH message.
-       (let-values ([(port getter) (open-string-output-port)])
-         (display-condition e port)
-         (write-now `(DOH "uadeplayer" ,(getter)) (current-output-port)))])
+       (write-now (condition->doh e "uadeplayer") (current-output-port))])
   (main))
