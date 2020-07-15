@@ -85,12 +85,13 @@
        (vfs-rebuild! vfs (vfs-crumbs vfs))]
       [(vfs crumbs)
        (let ([tracks (playlist-read (car crumbs))])
-         (if tracks
-             (begin
-               (vfs-crumbs-set! vfs crumbs)
-               (vfs-tracks-set! vfs tracks)
-               (vfs-vpath vfs))
-             (error #f "cannot enter! empty playlist" (vfs-vpath vfs))))]))
+         (cond
+           [(null? tracks)
+            (error #f "cannot enter! empty playlist" (vfs-vpath vfs))]
+           [else
+             (vfs-crumbs-set! vfs crumbs)
+             (vfs-tracks-set! vfs tracks)
+             (vfs-vpath vfs)]))]))
 
   ;;;; Cursor: pointer/selector of vfs tracks.
   (define-record-type cursor
