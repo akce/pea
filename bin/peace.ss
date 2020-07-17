@@ -423,6 +423,9 @@
     (connect-control)
     (ev-run)))
 
+;; Enable SO_REUSEADDR for all created sockets. See socket(7).
+(create-socket-reuseaddr #t)
+
 (unless (null? (command-line-arguments))
   (set! ctrl-node (car (command-line-arguments))))
 

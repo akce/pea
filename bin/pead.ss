@@ -6,6 +6,7 @@
 (import
   (rnrs)
   (only (chezscheme) command-line-arguments)
+  (socket extended)
   (pea server))
 
 ;; TODO load config.
@@ -23,6 +24,9 @@
     (display "state savefile @ ")(display default-statefile)(newline)
     (display "pea server control @ ")(display ctrl-node)(display ":")(display service)(newline)
     (display "pea multicast @ ")(display mcast-node)(display ":")(display service)(newline)))
+
+;; Enable SO_REUSEADDR for all created sockets. See socket(7).
+(create-socket-reuseaddr #t)
 
 ;; TODO this should be data driven...
 (let loop ([args (command-line-arguments)])
