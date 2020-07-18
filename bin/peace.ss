@@ -100,7 +100,7 @@
       (substring str start end))))
 
 (define make-debug-view
-  (lambda (controller)
+  (lambda ()
     (my
       [last-pos #f]
       [msg-list '()]
@@ -110,7 +110,13 @@
     ;; Display the object (or as much as will fit) on the line of the screen.
     (define (draw-msg item i w)
       (mvwaddstr msg-window i 0
-                 (safe-substring (object->string item) 0 w)))
+                 (safe-substring (string-append
+                                   (case (car item)
+                                     [(store-control-message) "< "]
+                                     [(store-mcast-message) "* "]
+                                     [(store-outgoing-message) "> "]
+                                     [else "? "])
+                                   (object->string (cdr item))) 0 w)))
 
     (define (draw-global-window)
       (werase global-window)
@@ -124,8 +130,8 @@
       (draw-list msg-window msg-list (- (length msg-list) 1) draw-msg draw-msg))
 
     (case-lambda
-      [(msg)
-       (case msg
+      [(view-command)
+       (case view-command
          [(create)
           (set! global-window (newwin 1 (- COLS 2) 1 1))
           (set! msg-window (newwin
@@ -139,24 +145,21 @@
             `(,global-window ,msg-window))
           (set! global-window #f)
           (set! msg-window #f)])]
-      [(msg arg)
-       (case msg
+      [(view-command msg)
+       (case view-command
+         [(store-control-message store-mcast-message store-outgoing-message)
+          (case (command msg)
+            [(POS)	; pos is special in that a great many of them are sent.
+             (set! last-pos msg)]
+            [else	; append the message.
+              ;; TODO limit the number of stored messages.
+              (set! msg-list `(,@msg-list ,(cons view-command msg)))])]
          [(client-command control-message mcast-message debug)
-          (case (command arg)
-            [(POS)
-             ;; pos is special in that a great many of them are sent.
-             (set! last-pos arg)
-             (when global-window
-               (draw-global-window))
-             ]
-            [else
-              (set! msg-list `(,@msg-list ,arg))
-              (when msg-window
-                (draw-msg-window))]
-            )]
+          (case (command msg)
+            [(POS)	(draw-global-window)]
+            [else	(draw-msg-window)])]
          [(handle-char)
-          #f]
-         )])
+          #f])])
     ))
 
 (define make-player-view
@@ -296,18 +299,18 @@
           (for-each
             delwin
             `(,controls-window ,playlist-window ,tags-window ,timer-window))])]
-      [(msg arg)
-       (case msg
+      [(view-command msg)
+       (case view-command
          [(handle-char)
           (case (model-state model)
             [(ANNOUNCING)
              'stop!]
             [else
-              (char->pea-command arg)])]
+              (char->pea-command msg)])]
          [(mcast-message control-message)
           (cond
-            [(list? arg)
-             (case (car arg)
+            [(list? msg)
+             (case (car msg)
                [(LEN POS)
                 (draw-timer-window)]
                [(STATE)
@@ -322,13 +325,13 @@
                [(VFS)
                 (draw-vfs-window)
                 (cond
-                  [(vfs-info-vpath arg) =>
+                  [(vfs-info-vpath msg) =>
                    (lambda (vp)
                      (controller 'tracks?))]
                   [else
                     (draw-playlist-window)])])]
             #;[else
-              ;; Otherwise arg is a singleton, most likely ACK.
+              ;; Otherwise msg is a singleton, most likely ACK.
               ;; HMMM Maybe everything (including ACKs) should be in a list?
               (if #f #f)]
           )]
@@ -340,8 +343,8 @@
 
     (define mcast-msg-watcher
       (lambda (msg)
+        (debug-view 'store-mcast-message msg)
         ;; TODO The display should show that we're waiting for a control connection.
-        (debug-view 'mcast-message msg)
         (when (eq? (command msg) 'AHOJ)
           (connect-control))
         (cache-message-info model msg)
@@ -351,7 +354,7 @@
 
     (define control-msg-watcher
       (lambda (msg)
-        (debug-view 'control-message msg)
+        (debug-view 'store-control-message msg)
         (cache-message-info model msg)
         (current-view 'control-message msg)
         (doupdate)))
@@ -364,7 +367,7 @@
       [model (make-model)]
       [controller (make-pea-client mcast-node mcast-service ctrl-node mcast-msg-watcher)]
       [player-view (make-player-view controller model)]
-      [debug-view (make-debug-view controller)]
+      [debug-view (make-debug-view)]
       [current-view player-view])
 
     (define set-current-view!
@@ -418,7 +421,8 @@
     (controller
       `(set-client-command-watcher!
          ,(lambda (msg)
-            (apply debug-view msg)
+            (debug-view 'store-outgoing-message msg)
+            (apply current-view msg)
             (doupdate))))
 
     (current-view 'create)
