@@ -5,6 +5,10 @@
     make-pea-client
     seconds->string
     pad-num
+    ;; Model of pea server state.
+    make-model
+    model-vpath model-cursor model-title model-type model-state model-pos model-duration model-tags model-tracks
+    cache-message-info
     ;; Server message accessors.
     state-info-state state-info-track-pos state-info-track-length state-info-track-tags
     vfs-info-vpath vfs-info-cursor vfs-info-track-title vfs-info-track-type
@@ -17,47 +21,19 @@
     (socket extended)
     )
 
-  (define-record-type model
-    (fields
-      ;; VFS/playlist.
-      [mutable		vpath]
-      [mutable		cursor]
-      [mutable		title]
-      [mutable		type]
-
-      ;; Track/playback.
-      [mutable		state]
-      [mutable		pos]
-      [mutable		duration]
-      [mutable		tags]
-
-      [mutable		tracks]
-      )
-    (protocol
-      (lambda (new)
-        (lambda ()
-          (new
-            ;; vfs/playlist
-            #f #f #f #f
-            ;; track/playback
-            #f #f #f '()
-            ;; tracks
-            #f)))))
-
   (define make-pea-client
     (lambda (mcast-node mcast-service hostname mcast-ui-callback)
-      ;; Store config in the model and connect the multicast socket.
+      ;; Only connect to the multicast socket.
       ;; There shouldn't be a problem on the multicast, it'll be used to watch
       ;; for pea servers coming online (via their ahoj message).
       ;; It'll be up to the UI if they want a control channel.
       (my
-        [model		(make-model)]
         [mcast-sock	(connect-server-socket
                           mcast-node mcast-service
                           (address-family inet) (socket-domain datagram)
                           (address-info addrconfig numericserv)
                           (ip-protocol udp))]
-        [ui-handler	(make-ui-handler model)]
+        [ui-handler	(make-ui-handler)]
         [process-pkt?	(make-packet-filter hostname mcast-ui-callback)])
       (mcast-add-membership mcast-sock mcast-node)
 
@@ -70,9 +46,8 @@
                  (when (and (not (eof-object? pkt))
                             (process-pkt? pkt))
                    ;; PEA multicast datagrams only contain one datum so there's no need to drain the port.
-                   (let ([msg (read (open-string-input-port (bytevector->string (car pkt) (native-transcoder))))])
-                     (cache-message-data model msg)
-                     (mcast-ui-callback msg))))))
+                   (mcast-ui-callback
+                     (read (open-string-input-port (bytevector->string (car pkt) (native-transcoder)))))))))
 
       ui-handler))
 
@@ -110,7 +85,7 @@
 
   ;; handle messages from the ui.
   (define make-ui-handler
-    (lambda (model)
+    (lambda ()
       (my
         [cc-watcher	#f]
         [ctrl-sock	#f]
@@ -133,11 +108,7 @@
               ;; Watch for PEA control port responses.
               ;; Messages on the control port will only contain PEA server responses to ui commands.
               (ev-io (socket-file-descriptor ctrl-sock) (evmask 'READ)
-                     (make-control-ev-watcher
-                       ctrl-sock ctrl-port
-                       (lambda (input)
-                         (cache-message-data model input)
-                         (ctrl-ui-callback input))))
+                     (make-control-ev-watcher ctrl-sock ctrl-port ctrl-ui-callback))
               'ACK]
             [else
                 ;; TODO handle failure. ie, client waits for AHOJ message from mcast.
@@ -146,22 +117,6 @@
 
       (lambda (input)
         (case (command input)
-          [(cached-cursor?)
-           (model-cursor model)]
-          [(cached-len?)
-           (model-duration model)]
-          [(cached-pos?)
-           (model-pos model)]
-          [(cached-state?)
-           (model-state model)]
-          [(cached-tags?)
-           (model-tags model)]
-          [(cached-tracks?)
-           (model-tracks model)]
-          [(cached-type?)
-           (model-type model)]
-          [(cached-vpath?)
-           (model-vpath model)]
           [(make-control-connection!)
            (connect-control (list-ref input 1) (list-ref input 2) (list-ref input 3))]
           [(set-client-command-watcher!)
@@ -177,40 +132,6 @@
             (when ctrl-port
               (write-now input ctrl-port))
             #f]))))
-
-  ;; extract and save useful data received from pea-server.
-  (define cache-message-data
-    (lambda (model msg)
-      (case (command msg)
-        [(POS)
-         (model-pos-set! model (arg msg))]
-        [(LEN)
-         (model-duration-set! model (arg msg))]
-        [(STATE)
-         (model-state-set! model (state-info-state msg))
-         (case (model-state model)
-           [(ANNOUNCING)
-             (model-pos-set! model #f)
-             (model-duration-set! model #f)
-             (model-tags-set! model '())]
-           [else
-             (model-pos-set! model (state-info-track-pos msg))
-             (model-duration-set! model (state-info-track-length msg))
-             (model-tags-set! model (state-info-track-tags msg))])]
-        [(TAGS)
-         (model-tags-set! model (arg msg))]
-        [(TRACKS)
-         (model-tracks-set! model (arg msg))]
-        [(VFS)
-         ;; Only update vpath cache value if it has changed.
-         (cond
-           [(vfs-info-vpath msg) =>
-            (lambda (vp)
-              (model-vpath-set! model vp))])
-         (model-cursor-set! model (vfs-info-cursor msg))
-         (model-title-set! model (vfs-info-track-title msg))
-         (model-type-set! model (vfs-info-track-type msg))]
-        )))
 
   ;; Read scheme datums from socket and pass onto handler function.
   (define make-control-ev-watcher
@@ -236,6 +157,67 @@
 
   ;;;; Client util functions.
   ;; These could be useful to multiple clients so could be moved into a (client util) lib.
+
+  (define-record-type model
+    (fields
+      ;; VFS/playlist.
+      [mutable		vpath]
+      [mutable		cursor]
+      [mutable		title]
+      [mutable		type]
+
+      ;; Track/playback.
+      [mutable		state]
+      [mutable		pos]
+      [mutable		duration]
+      [mutable		tags]
+
+      [mutable		tracks]
+      )
+    (protocol
+      (lambda (new)
+        (lambda ()
+          (new
+            ;; vfs/playlist
+            #f #f #f #f
+            ;; track/playback
+            #f #f #f '()
+            ;; tracks
+            #f)))))
+
+  ;; [proc] cache-message-info: Extract and save useful info received from pea-server.
+  (define cache-message-info
+    (lambda (model msg)
+      (case (command msg)
+        [(POS)
+         (model-pos-set! model (arg msg))]
+        [(LEN)
+         (model-duration-set! model (arg msg))]
+        [(STATE)
+         (model-state-set! model (state-info-state msg))
+         (case (model-state model)
+           [(ANNOUNCING)
+             (model-pos-set! model #f)
+             (model-duration-set! model #f)
+             (model-tags-set! model '())]
+           [else
+             (model-pos-set! model (state-info-track-pos msg))
+             (model-duration-set! model (state-info-track-length msg))
+             (model-tags-set! model (state-info-track-tags msg))])]
+        [(TAGS)
+         (model-tags-set! model (arg msg))]
+        [(TRACKS)
+         (model-tracks-set! model (arg msg))]
+        [(VFS)
+         ;; Only update vpath cache value if it has changed. ie, don't store a #f value.
+         (cond
+           [(vfs-info-vpath msg) =>
+            (lambda (vp)
+              (model-vpath-set! model vp))])
+         (model-cursor-set! model (vfs-info-cursor msg))
+         (model-title-set! model (vfs-info-track-title msg))
+         (model-type-set! model (vfs-info-track-type msg))]
+        )))
 
   (define state-info-state
     (lambda (i)

@@ -160,7 +160,7 @@
     ))
 
 (define make-player-view
-  (lambda (controller)
+  (lambda (controller model)
     (my
       [controls-window #f]
       [playlist-window #f]
@@ -170,7 +170,7 @@
     (define (draw-controls-window)
       (mvwaddstr controls-window
                  0 0
-                 (case (controller 'cached-state?)
+                 (case (model-state model)
                    [(PLAYING)		"|>"]
                    [(PAUSED)		"||"]
                    [(STOPPED)		"[]"]
@@ -179,7 +179,7 @@
       (wnoutrefresh controls-window))
 
     (define (draw-tags-window)
-      (let ([tags (controller 'cached-tags?)])
+      (let ([tags (model-tags model)])
         (werase tags-window)
         (unless (null? tags)
           (let* ([label-len
@@ -198,8 +198,8 @@
         (wnoutrefresh tags-window)))
 
     (define (draw-timer-window)
-      (let ([pos (controller 'cached-pos?)]
-            [len (controller 'cached-len?)])
+      (let ([pos (model-pos model)]
+            [len (model-duration model)])
         (werase timer-window)
         (mvwaddstr timer-window
                    0 0 (if pos
@@ -224,13 +224,13 @@
         (wattr-off playlist-window A_REVERSE))
       (draw-list
         playlist-window
-        (controller 'cached-tracks?)
-        (controller 'cached-cursor?)
+        (model-tracks model)
+        (model-cursor model)
         draw-item draw-selected-item))
 
     (define (draw-vfs-window)
       (cond
-        [(controller 'cached-vpath?) =>
+        [(model-vpath model) =>
          (lambda (vpath)
            (mvwaddch stdscr 0 1 ACS_RTEE)
            (waddstr stdscr (safe-substring (apply string-join "/" vpath) 0 (- COLS 5)))
@@ -243,7 +243,7 @@
     (define (char->pea-command ch)
       (case ch
         [(#\newline)
-         (case (controller 'cached-type?)
+         (case (model-type model)
            [(DIR M3U PLS)
             'enter!]
            [(AMIGA AUDIO VIDEO)
@@ -299,7 +299,7 @@
       [(msg arg)
        (case msg
          [(handle-char)
-          (case (controller 'cached-state?)
+          (case (model-state model)
             [(ANNOUNCING)
              'stop!]
             [else
@@ -344,6 +344,7 @@
         (debug-view 'mcast-message msg)
         (when (eq? (command msg) 'AHOJ)
           (connect-control))
+        (cache-message-info model msg)
         ;; TODO review this 'source-tag (input) format.
         (current-view 'mcast-message msg)
         (doupdate)))
@@ -351,6 +352,7 @@
     (define control-msg-watcher
       (lambda (msg)
         (debug-view 'control-message msg)
+        (cache-message-info model msg)
         (current-view 'control-message msg)
         (doupdate)))
 
@@ -359,8 +361,9 @@
         (controller `(make-control-connection! ,ctrl-node ,ctrl-service ,control-msg-watcher))))
 
     (my
+      [model (make-model)]
       [controller (make-pea-client mcast-node mcast-service ctrl-node mcast-msg-watcher)]
-      [player-view (make-player-view controller)]
+      [player-view (make-player-view controller model)]
       [debug-view (make-debug-view controller)]
       [current-view player-view])
 
