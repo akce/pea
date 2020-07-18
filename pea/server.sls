@@ -42,7 +42,8 @@
     (lambda (input port)
       (case (command input)
         [(POS)
-         (when (= (arg input) 0)
+         ;; pos can be #f so use eqv? for comparison.
+         (when (eqv? (arg input) 0)
            (display "> ")(display '(POS *))(newline))]
         [else
           (display "> ")(display input)(newline)])
@@ -115,8 +116,11 @@
         [client-port	(socket->port client-sock)])
       ;; Return a welcome message.
       (write-now '(AHOJ "Control connection established, welcome to PEA! :)") client-port)
-      ;; Send current state, so UIs can immediately draw themselves.
+      ;; Send complete player state, so UIs can immediately draw themselves.
       (write-now (controller 'state?) client-port)
+      (write-now (controller 'len?) client-port)
+      (write-now (controller 'pos?) client-port)
+      (write-now (controller 'tags?) client-port)
       (write-now (controller 'vfs?) client-port)
 
       (lambda (w revent)
@@ -245,14 +249,9 @@
         (lambda ()
           (case state
             [(ANNOUNCING)
-             `(STATE ,state ,announce-delay ,(cursor-index cursor))]
+             `(STATE ,state ,announce-delay)]
             [else
-              `(STATE ,state
-                 ;; Current track pos/length/tags. Can be #f if STOPPED.
-                 ,track-pos
-                 ,track-length
-                 ,track-tags
-                 )])))
+              `(STATE ,state)])))
 
       ;; Playlist state: vpath/index/title/type
       (define make-vfs-info
@@ -452,13 +451,13 @@
 
           ;;;; Client query commands.
           [(len?)
-           track-length]
+           (make-track-length track-length)]
           [(pos?)
-           track-pos]
+           (make-track-pos track-pos)]
           [(state?)
            (make-state-info)]
           [(tags?)
-           track-tags]
+           (make-track-tags track-tags)]
           [(tracks?)
            (make-track-list vfs)]
           [(vfs?)
@@ -467,6 +466,8 @@
           ;;;; Player change state commands. Cache and multicast them.
           [(STOPPED)
            ;; Reset track cache data.
+           ;; NOTE Clients will have to assume these track property changes on receipt of STOPPED since
+           ;; the server doesn't send them here. It's an efficiency but makes the protocol less robust.
            (set! track-tags '())
            (set! track-length #f)
            (set! track-pos #f)
@@ -488,7 +489,7 @@
            (write-now input mcast)]
           [(TAGS)
            (set! track-tags (arg input))
-           (write-now input mcast)]
+           (write-now (make-track-tags track-tags) mcast)]
           ;; mpv debug message.
           [(MPV)
            (write-now input mcast)]
@@ -505,6 +506,20 @@
       (write-now '(AHOJ "pea: i live again...") mcast)
 
       controller))
+
+  (define make-track-length
+    (lambda (len)
+      `(LEN ,len)))
+
+  (define make-track-pos
+    (lambda (pos)
+      `(POS ,pos)))
+
+  ;; [proc] make-track-tags: create a TAGS message.
+  ;; ie, (TAGS tags-alist)
+  (define make-track-tags
+    (lambda (tags)
+      `(TAGS ,tags)))
 
   ;; [proc] make-ui-track-list: return current playlist tracks with info that a UI would find useful.
   ;; ie,

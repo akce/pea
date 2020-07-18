@@ -10,7 +10,6 @@
     model-vpath model-cursor model-title model-type model-state model-pos model-duration model-tags model-tracks
     cache-message-info
     ;; Server message accessors.
-    state-info-state state-info-track-pos state-info-track-length state-info-track-tags
     vfs-info-vpath vfs-info-cursor vfs-info-track-title vfs-info-track-type
     )
   (import
@@ -196,14 +195,11 @@
         [(STATE)
          (model-state-set! model (state-info-state msg))
          (case (model-state model)
-           [(ANNOUNCING)
+           [(ANNOUNCING STOPPED)
+            ;; TODO ANNOUNCING has a countdown arg that should be used.
              (model-pos-set! model #f)
              (model-duration-set! model #f)
-             (model-tags-set! model '())]
-           [else
-             (model-pos-set! model (state-info-track-pos msg))
-             (model-duration-set! model (state-info-track-length msg))
-             (model-tags-set! model (state-info-track-tags msg))])]
+             (model-tags-set! model '())])]
         [(TAGS)
          (model-tags-set! model (arg msg))]
         [(TRACKS)
@@ -222,15 +218,6 @@
   (define state-info-state
     (lambda (i)
       (list-ref i 1)))
-  (define state-info-track-pos
-    (lambda (i)
-      (list-ref i 2)))
-  (define state-info-track-length
-    (lambda (i)
-      (list-ref i 3)))
-  (define state-info-track-tags
-    (lambda (i)
-      (list-ref i 4)))
   (define vfs-info-vpath
     (lambda (i)
       (list-ref i 1)))
