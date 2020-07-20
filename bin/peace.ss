@@ -8,7 +8,7 @@
 
 (import
   (rnrs)
-  (only (chezscheme) command-line-arguments list-tail)
+  (only (chezscheme) command-line-arguments getenv list-tail meta-cond)
   (ev)
   (ncurses)
   (pea client)
@@ -21,6 +21,28 @@
 (define service "49000")
 (define mcast-node "224.0.0.49")
 (define ctrl-node (gethostname))
+
+(meta-cond
+  [(getenv "WINDOWID")
+   (define set-xterm-title!
+     (lambda (title-string)
+       (write-char #\x1b)
+       (display "]0;")
+       (display title-string)
+       (write-char #\x7)
+       (flush-output-port (current-output-port))))
+   (define draw-xterm-title
+     (lambda (model)
+       (set-xterm-title!
+         (string-append
+           (model-state->string model)
+           " "
+           (get-title-string model)
+           " - PEACE"))))]
+  [else
+    (define draw-xterm-title
+      (lambda (_)
+        (if #f #f)))])
 
 (define draw-app-border
   (lambda ()
@@ -162,6 +184,15 @@
           #f])])
     ))
 
+(define model-state->string
+  (lambda (model)
+    (case (model-state model)
+      [(PLAYING)	"|>"]
+      [(PAUSED)		"||"]
+      [(STOPPED)	"[]"]
+      [(ANNOUNCING)	"**"]
+      [else		"??"])))
+
 (define make-player-view
   (lambda (controller model)
     (my
@@ -171,14 +202,7 @@
       [timer-window #f])
 
     (define (draw-controls-window)
-      (mvwaddstr controls-window
-                 0 0
-                 (case (model-state model)
-                   [(PLAYING)		"|>"]
-                   [(PAUSED)		"||"]
-                   [(STOPPED)		"[]"]
-                   [(ANNOUNCING)	"**"]
-                   [else		"??"]))
+      (mvwaddstr controls-window 0 0 (model-state->string model))
       (wnoutrefresh controls-window))
 
     (define (draw-tags-window)
@@ -317,13 +341,17 @@
                 (draw-controls-window)
                 (draw-timer-window)
                 (draw-tags-window)
+                (draw-xterm-title model)
                 ]
                [(TAGS)
-                (draw-tags-window)]
+                (draw-tags-window)
+                (draw-xterm-title model)
+                ]
                [(TRACKS)
                 (draw-playlist-window)]
                [(VFS)
                 (draw-vfs-window)
+                (draw-xterm-title model)
                 (cond
                   [(vfs-info-vpath msg) =>
                    (lambda (vp)

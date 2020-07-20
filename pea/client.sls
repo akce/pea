@@ -8,6 +8,7 @@
     ;; Model of pea server state.
     make-model
     model-vpath model-cursor model-title model-type model-state model-pos model-duration model-tags model-tracks
+    get-title-string
     cache-message-info
     ;; Server message accessors.
     vfs-info-vpath vfs-info-cursor vfs-info-track-title vfs-info-track-type
@@ -230,6 +231,35 @@
   (define vfs-info-track-type
     (lambda (i)
       (list-ref i 4)))
+
+   (define get-title-string
+     (lambda (model)
+       (define match-string
+         (lambda (str)
+           (lambda (a)
+             (string-ci=? a str))))
+       (define get-track-title
+         (lambda ()
+           (cond
+             [(model-title model) => values]
+             [else ""])))
+       (cond
+         [(null? (model-tags model)) (get-track-title)]
+         [(assp (match-string "icy-title") (model-tags model)) => cdr]
+         [else
+           (let ([ls (remp not
+                           (list
+                             (cond
+                               [(assp (match-string "title") (model-tags model)) => cdr]
+                               [else #f])
+                             (cond
+                               [(assp (match-string "artist") (model-tags model)) => cdr]
+                               [else #f])))])
+             (case (length ls)
+               [(0) (get-track-title)]
+               [(1) (car ls)]
+               [else (string-append (car ls) " / " (cadr ls))])
+             )])))
 
   (define pad-num
     (lambda (num)
