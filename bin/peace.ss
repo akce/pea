@@ -369,17 +369,46 @@
 (define main
   (lambda (mcast-node mcast-service ctrl-node ctrl-service)
 
+    ;; This main function will initialise the display, create an mcast message watcher and
+    ;; then attempt to create a control connection to pead.
+    ;; On success, the mcast watcher function is changed to one that will process all messages from
+    ;; requested server.
+    ;; Otherwise, the mcast watcher will continue to monitor for pead ahoj (server wakeup) messages.
+
+    ;; [proc] try-connect-control: tries to create a control channel to pead.
+    ;; On success, the mcast message watcher function will be set to decode received
+    ;; messages and update display as usual.
+    ;; On failure, the mcast message watcher remains unchanged and will continue scanning
+    ;; mcast messages for a server ahoj message.
+    (define try-connect-control
+      (lambda ()
+        (guard (e [else #f])
+          (controller `(make-control-connection! ,ctrl-node ,ctrl-service ,control-msg-watcher))
+          (set! mcast-msg-watcher-function connected-mcast-msg-watcher))))
+
+    ;; [proc] ahoj-connect: looks for an ahoj message and then initiates a control connection.
+    (define ahoj-connect
+      (lambda (msg)
+        (when (eq? (command msg) 'AHOJ)
+          ;; TODO The display should show connect failures.
+          (try-connect-control))))
+
+    ;; [proc] connected-mcast-msg-watcher: Handles all mcast messages received.
+    (define connected-mcast-msg-watcher
+      (lambda (msg)
+        ;; TODO review this 'source-tag (input) format.
+        (current-view 'mcast-message msg)))
+
+    ;; [proc] mcast-msg-watcher: the actual mcast message watcher function.
+    ;; It performs common operations but delegates actual message processing to mcast-msg-watcher-function.
     (define mcast-msg-watcher
       (lambda (msg)
         (debug-view 'store-mcast-message msg)
-        ;; TODO The display should show that we're waiting for a control connection.
-        (when (eq? (command msg) 'AHOJ)
-          (connect-control))
         (cache-message-info model msg)
-        ;; TODO review this 'source-tag (input) format.
-        (current-view 'mcast-message msg)
+        (mcast-msg-watcher-function msg)
         (doupdate)))
 
+    ;; [proc] control-msg-watcher: Handles unicast messages received on the control channel.
     (define control-msg-watcher
       (lambda (msg)
         (debug-view 'store-control-message msg)
@@ -387,11 +416,8 @@
         (current-view 'control-message msg)
         (doupdate)))
 
-    (define connect-control
-      (lambda ()
-        (controller `(make-control-connection! ,ctrl-node ,ctrl-service ,control-msg-watcher))))
-
     (my
+      [mcast-msg-watcher-function ahoj-connect]
       [model (make-model)]
       [controller (make-pea-client mcast-node mcast-service ctrl-node mcast-msg-watcher)]
       [player-view (make-player-view controller model)]
@@ -455,7 +481,7 @@
 
     (current-view 'create)
     (doupdate)
-    (connect-control)
+    (try-connect-control)
     (ev-run)))
 
 ;; Enable SO_REUSEADDR for all created sockets. See socket(7).
