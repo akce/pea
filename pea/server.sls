@@ -76,13 +76,15 @@
                           (address-info all numerichost passive) (ip-protocol tcp))])
 
       ;; Handle stdin commands. ie, server exit.
-      (ev-io 0 (evmask 'READ) (make-stdin-reader controller))
+      (ev-io 0 (evmask 'READ) (make-stdin-reader (controller-ui controller)))
 
       ;; Create the Control socket event watcher.
-      (ev-io (socket-file-descriptor ctrl-sock) (evmask 'READ) (make-control-server controller ctrl-sock))
+      (ev-io (socket-file-descriptor ctrl-sock) (evmask 'READ) (make-control-server (controller-ui controller) ctrl-sock))
 
-      ;; Create the media player.
-      (controller `(set-player! ,(make-player controller)))
+      ;; Create the media player and bind it to both the ui-controller and player-controller objects.
+      ;; That's so that the player can affect state changes. eg, stop! when mpv video player detects user stopped playback.
+      ;; TODO look to remove that requirement by adding more playback state messages? eg, USER_STOPPED.
+      ((controller-ui controller) `(set-player! ,(make-player (controller-ui controller) (controller-player controller))))
 
       ;; return the runner!
       (lambda ()
@@ -91,14 +93,14 @@
   ;; [proc] make-control-server: create a socket listener function for use as an ev-io watcher.
   ;; It's only purpose is to create client watchers as they connect.
   (define make-control-server
-    (lambda (controller ctrl-sock)
+    (lambda (ui-controller ctrl-sock)
       (lambda (w revent)
         ;; This function is called when there's read activity on the Control socket.
         ;; ie, when a client is ready to connect.
         ;; HMMM add abstraction for all of client-* to (socket extended)?
         (let ([client-sock (socket-accept ctrl-sock)])
           ;; Create the client connect event watcher.
-          (ev-io (socket-file-descriptor client-sock) (evmask 'READ) (make-control-client controller client-sock))
+          (ev-io (socket-file-descriptor client-sock) (evmask 'READ) (make-control-client ui-controller client-sock))
           (let ([pi (socket-peerinfo client-sock (name-info nofqdn numericserv))])
             (display "new client fd/host/port: ")
             (display (socket-file-descriptor client-sock))
@@ -110,18 +112,18 @@
 
   ;; [proc] make-control-client: makes a control client function suitable for use as an ev-io watcher.
   (define make-control-client
-    (lambda (controller client-sock)
+    (lambda (ui-controller client-sock)
       ;; The control client will read commands, action them, and respond.
       (my
         [client-port	(socket->port client-sock)])
       ;; Return a welcome message.
       (write-now '(AHOJ "Control connection established, welcome to PEA! :)") client-port)
       ;; Send complete player state, so UIs can immediately draw themselves.
-      (write-now (controller 'state?) client-port)
-      (write-now (controller 'len?) client-port)
-      (write-now (controller 'pos?) client-port)
-      (write-now (controller 'tags?) client-port)
-      (write-now (controller 'vfs?) client-port)
+      (write-now (ui-controller 'state?) client-port)
+      (write-now (ui-controller 'len?) client-port)
+      (write-now (ui-controller 'pos?) client-port)
+      (write-now (ui-controller 'tags?) client-port)
+      (write-now (ui-controller 'vfs?) client-port)
 
       (lambda (w revent)
         ;; WARNING: Using 'read' here assumes that clients are well behaved and send fully formed sexprs.
@@ -144,7 +146,7 @@
                 ;; TODO coding errors need to drop into debugger rather than report and continue.
                 (e [else
                      (write-now (condition->doh e "pead") client-port)])
-                (let ([msg (controller input)])
+                (let ([msg (ui-controller input)])
                   (when msg
                     (write-now msg client-port)))
                 ;; drain input port.
@@ -181,8 +183,8 @@
     [STOPPED	'STOPPED]	; Played state STOPPED.
     )
 
-  ;; [proc] make-controller: creates the main controller function.
-  ;; [return] controller function.
+  ;; [proc] make-controller: creates the controller functions.
+  ;; [return] a pair containing ui and player controller functions.
   ;;
   ;; 'model' is the global pea data.
   ;; 'mcast' is the multicast *text* port through which global messages are sent.
@@ -190,24 +192,25 @@
   ;; eg,
   ;; > (define controller (make-controller pea-model multicast-port))
   ;;
-  ;; The controller handles state transitions and drives the media player.
+  ;; The ui-controller handles state transitions and drives the media player.
   ;;
-  ;; It's also responsible for sending all multicast messages. These multicast messages usually
+  ;; These functions are responsible for sending all multicast messages. These multicast messages usually
   ;; indicate changes to global state and/or informational messages that all clients should be aware of.
   ;;
-  ;; The returned controller function will take one input argument.
-  ;; ie, the command and its arguments (if any).
-  ;;
-  ;; The format for this input must be a list or a symbol.
+  ;; Controller functions take one input argument.
+  ;; ie, the command singleton or a list containing command and its arguments (if any).
   ;;
   ;; eg, To start play:
-  ;; > (controller 'play!)
+  ;; > (ui-controller 'play!)
   ;;
   ;; Unit commands may also be passed in within a list:
-  ;; > (controller '(play!))
+  ;; > (ui-controller '(play!))
   ;;
   ;; A command with argument, cursor move:
-  ;; > (controller '(move! 1))
+  ;; > (ui-controller '(move! 1))
+  ;; Accessors for the controller pseudo-record.
+  (define controller-ui car)
+  (define controller-player cdr)
   (define make-controller
     (lambda (model mcast)
       (my
@@ -307,11 +310,11 @@
             (ev-timer announce-delay 0
                       (lambda (timer i)
                         (set! announce-timer #f)
-                        (controller 'play!))))
+                        (ui-controller 'play!))))
           'ACK))
 
       ;; [proc] play-another: play the next media track in the current playlist.
-      ;; [return] result of (controller play!) or #f if nothing left in playlist.
+      ;; [return] result of (ui-controller play!) or #f if nothing left in playlist.
       (define play-another
         (lambda ()
           (case state
@@ -328,7 +331,7 @@
                     [else
                       ;; Otherwise, play immediately.
                       (set! state (pea-state STOPPED))	; set STOPPED as play! requires it.
-                      (controller 'play!)]
+                      (ui-controller 'play!)]
                     )]
                  [else
                    ;; Nothing more in the playlist.
@@ -344,15 +347,11 @@
             )))
 
       ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-      ;; The controller function itself.
-      ;; It's really just a state transition table.
-      (define (controller input)
-        (case (command input)
-          [(POS)
-           (when (= 0 (arg input))
-             (display "< ")(display '(POS *))(newline))]
-          [else
-            (display "< ")(display input)(newline)])
+      ;; The ui controller function.
+      ;; This function mediates between a UI and the media player.
+      ;; Its prime responsibility is to receive UI/player control change messages and act accordingly.
+      (define (ui-controller input)
+        (display "< ")(display input)(newline)
         ;; List these commands in alphabetic order within their groupings.
         (case (command input)
           ;;;; Player commands.
@@ -418,10 +417,10 @@
                     ;; Moving selection while playing will attempt to play the newly selected track.
                     ;; NB: This doesn't work for mpv video as that driver has to guess the reason
                     ;; for entering IDLE state. For now, it assumes user stop! rather than move!.
-                    (controller 'stop!)
+                    (ui-controller 'stop!)
                     (case (track-type (current-track))
                       [(AMIGA AUDIO)
-                       (controller 'play!)]
+                       (ui-controller 'play!)]
                       [(VIDEO)
                        (announce-track)]
                       [else
@@ -463,6 +462,25 @@
           [(vfs?)
            (make-vfs-info)]
 
+          ;; Bind a media player instance to this controller.
+          [(set-player!)
+           (set! player (arg input))]
+          [else
+            'eh?]
+          ))
+
+      ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+      ;; The player controller function.
+      ;; This function mediates between a media player and any UIs.
+      ;; Its prime responsibility is to receive player state change messages and act accordingly.
+      (define (player-controller input)
+        (case (command input)
+          [(POS)
+           (when (= 0 (arg input))
+             (display "< ")(display '(POS *))(newline))]
+          [else
+            (display "< ")(display input)(newline)])
+        (case (command input)
           ;;;; Player change state commands. Cache and multicast them.
           [(STOPPED)
            ;; Reset track cache data.
@@ -494,10 +512,6 @@
           [(MPV)
            (write-now input mcast)]
 
-          ;; HMMM both player and controller need to refer to each other. Not sure I like it this way..
-          [(set-player!)
-           (set! player (arg input))]
-
           ;; HMMM add a help command?
           [else
             'eh?]))
@@ -505,7 +519,8 @@
       ;; AHOJ Notifies any watching clients that this server is now up.
       (write-now '(AHOJ "pea: i live again...") mcast)
 
-      controller))
+      ;; Return the controller pseudo record.
+      (cons ui-controller player-controller)))
 
   (define make-track-length
     (lambda (len)
