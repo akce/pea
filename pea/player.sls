@@ -62,9 +62,10 @@
       (mpv-create)
       (mpv-set-property "audio-display" #f)	; disable mpv embedded coverart display. 
       ;; Turn on keyboard input for videos.
-      (mpv-set-option/flag "input-default-bindings" #t)
-      (mpv-set-option/flag "input-vo-keyboard" #t)
-      (mpv-set-option/flag "osc" #t)
+      (mpv-set-option "input-default-bindings" #t)
+      (mpv-set-option "input-vo-keyboard" #t)
+      (mpv-set-option "osc" #t)
+      (mpv-set-option "user-agent" "PEA (Play 'Em All)/3.0")
       (mpv-initialize)
       ;; Rebind default problem keys. Namely, 'q' must *not* shutdown. Stop instead.
       (mpv-command "keybind" "q" "stop")
