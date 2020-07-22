@@ -419,7 +419,9 @@
     (my
       [mcast-msg-watcher-function ahoj-connect]
       [model (make-model)]
-      [controller (make-pea-client mcast-node mcast-service ctrl-node mcast-msg-watcher)]
+      [controller (make-pea-client mcast-node mcast-service mcast-msg-watcher
+                                   ;; Include mcast-msg-watcher in packet filter to get packet filter debug messages.
+                                   (make-packet-filter ctrl-node mcast-msg-watcher))]
       [player-view (make-player-view controller model)]
       [debug-view (make-debug-view)]
       [current-view player-view])

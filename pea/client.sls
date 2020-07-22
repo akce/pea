@@ -3,6 +3,7 @@
   (pea client)
   (export
     make-pea-client
+    make-packet-filter
     seconds->string
     pad-num
     ;; Model of pea server state.
@@ -22,66 +23,36 @@
     )
 
   (define make-pea-client
-    (lambda (mcast-node mcast-service hostname mcast-ui-callback)
-      ;; Only connect to the multicast socket.
-      ;; There shouldn't be a problem on the multicast, it'll be used to watch
-      ;; for pea servers coming online (via their ahoj message).
-      ;; It'll be up to the UI if they want a control channel.
-      (my
-        [mcast-sock	(connect-server-socket
+    (case-lambda
+      [(mcast-node mcast-service mcast-ui-callback)
+       (make-pea-client mcast-node mcast-service mcast-ui-callback values)]
+      [(mcast-node mcast-service mcast-ui-callback process-pkt?)
+       ;; Only connect to the multicast socket.
+       ;; There shouldn't be a problem on the multicast, it'll be used to watch
+       ;; for pea servers coming online (via their ahoj message).
+       ;; It'll be up to the UI if they want a control channel.
+       (my
+         [mcast-sock	(connect-server-socket
                           mcast-node mcast-service
                           (address-family inet) (socket-domain datagram)
                           (address-info addrconfig numericserv)
                           (ip-protocol udp))]
-        [ui-handler	(make-ui-handler)]
-        [process-pkt?	(make-packet-filter hostname mcast-ui-callback)])
-      (mcast-add-membership mcast-sock mcast-node)
+         [ui-handler	(make-ui-handler)])
+       (mcast-add-membership mcast-sock mcast-node)
 
-      ;; Watch for PEA multicast messages from hostname only.
-      (ev-io (socket-file-descriptor mcast-sock) (evmask 'READ)
-             (lambda (w revent)
-               (let ([pkt (socket-recvfrom mcast-sock 1024)])
-                 ;; Filter packets here so that unwanted ones are not cached. This will need to be revised
-                 ;; if clients want the option of changing the host they're connected to at runtime.
-                 (when (and (not (eof-object? pkt))
-                            (process-pkt? pkt))
-                   ;; PEA multicast datagrams only contain one datum so there's no need to drain the port.
-                   (mcast-ui-callback
-                     (read (open-string-input-port (bytevector->string (car pkt) (native-transcoder)))))))))
+       ;; Watch for PEA multicast messages from hostname only.
+       (ev-io (socket-file-descriptor mcast-sock) (evmask 'READ)
+              (lambda (w revent)
+                (let ([pkt (socket-recvfrom mcast-sock 1024)])
+                  ;; Filter packets here so that unwanted ones are not needlessly processed.
+                  ;; Note that there's no check for EOF here as we should never receive one from
+                  ;; the multicast socket (it's connectionless).
+                  (when (process-pkt? pkt)
+                    ;; PEA multicast datagrams only contain one datum so there's no need to drain the port.
+                    (mcast-ui-callback
+                      (read (open-string-input-port (bytevector->string (car pkt) (native-transcoder)))))))))
 
-      ui-handler))
-
-  ;; [proc] make-packet-filter: create a predicate that matches hostname sockaddr.
-  ;; This caches the sockaddr for hostname and for all ignored hosts with the idea that a bytevector compare
-  ;; is cheaper than hostname lookups.
-  ;; This assumes that the number of pea servers multicasting in the LAN will be low.
-  ;; The ui-callback is only here for debug messages and can be removed if they're no longer desired.
-  (define make-packet-filter
-    (lambda (hostname ui-callback)
-      (define host-sockaddr #f)
-      (define seen-sockaddr '())
-      (lambda (pkt)
-        (cond
-          [host-sockaddr
-            (bytevector=? host-sockaddr (cdr pkt))]
-          [(memp (lambda (sa)
-                   (bytevector=? sa (cdr pkt))) seen-sockaddr)
-           ;; discard addresses that we've seen that aren't the host.
-           #f]
-          [else
-            (let ([peer (getnameinfo (cdr pkt) (name-info nofqdn numericserv))])
-              (cond
-                ;; Only checking the start of the string as getnameinfo will still return the localnet suffix.
-                ;; eg, "atlantis.localnet".
-                ;; This is despite the nofqdn flag...
-                [(string-startswith? (car peer) hostname)
-                 (set! host-sockaddr (cdr pkt))
-                 (ui-callback `(debug (hostname found ,hostname ,(car peer) ,host-sockaddr)))
-                 #t]
-                [else
-                  (ui-callback `(debug (hostname ignore ,hostname ,(car peer) ,host-sockaddr)))
-                  (set! seen-sockaddr (cons (cdr pkt) seen-sockaddr))
-                  #f]))]))))
+       ui-handler]))
 
   ;; handle messages from the ui.
   (define make-ui-handler
@@ -157,6 +128,43 @@
 
   ;;;; Client util functions.
   ;; These could be useful to multiple clients so could be moved into a (client util) lib.
+
+  ;; [proc] make-packet-filter: create a predicate that matches hostname sockaddr.
+  ;; This caches the sockaddr for hostname and for all ignored hosts with the idea that a bytevector compare
+  ;; is cheaper than hostname lookups.
+  ;; This assumes that the number of pea servers multicasting in the LAN will be low.
+  ;; The ui-callback is only here for debug messages and can be removed if they're no longer desired.
+  (define make-packet-filter
+    (case-lambda
+      [(hostname)
+       ;; Default ui-callback is to do nothing. ('values' is quite handy as a nop function!)
+       (make-packet-filter hostname values)]
+      [(hostname ui-callback)
+       (my
+         [host-sockaddr #f]
+         [seen-sockaddr '()])
+       (lambda (pkt)
+         (cond
+           [host-sockaddr
+             (bytevector=? host-sockaddr (cdr pkt))]
+           [(memp (lambda (sa)
+                    (bytevector=? sa (cdr pkt))) seen-sockaddr)
+            ;; discard addresses that we've seen that aren't the host.
+            #f]
+           [else
+             (let ([peer (getnameinfo (cdr pkt) (name-info nofqdn numericserv))])
+               (cond
+                 ;; Only checking the start of the string as getnameinfo will still return the localnet suffix.
+                 ;; eg, "atlantis.localnet".
+                 ;; This is despite the nofqdn flag...
+                 [(string-startswith? (car peer) hostname)
+                  (set! host-sockaddr (cdr pkt))
+                  (ui-callback `(debug (hostname found ,hostname ,(car peer) ,host-sockaddr)))
+                  #t]
+                 [else
+                   (ui-callback `(debug (hostname ignore ,hostname ,(car peer) ,host-sockaddr)))
+                   (set! seen-sockaddr (cons (cdr pkt) seen-sockaddr))
+                   #f]))]))]))
 
   (define-record-type model
     (fields
