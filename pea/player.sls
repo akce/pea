@@ -92,15 +92,6 @@
       (define tags-id 1)
       (define time-pos-id 2)
       (define pause-id 3)
-      ;; last-pos & duration are used to guess if 'stop' was selected during video playback.
-      ;; This is a workaround for mpv not generating a specific user-selected-stop event and my
-      ;; not being able to find a specific event to watch for.
-      ;; NB: eof-reached does not trigger as pea needs in keep-open mode and the end-file event
-      ;; NB: seems to behave more like a file-closed event.
-      ;; An alternate, and much more involved solution, would be to render the video into a pea controlled
-      ;; window and have pea handle key input itself. But that's a lot more work...
-      (define last-pos 0)
-      (define duration #f)
 
       ;; handler: translate MPV relevant events to PEA events then return via callback function.
       (lambda (event)
@@ -112,10 +103,9 @@
                [(= pid time-pos-id)
                 ;; #f time-pos is still occassionally seen at end of track playback.
                 ;; Only pass real position values to the controller.
-                (let ([pos (mpv-property-event-value event)])
-                  (when pos
-                    (set! last-pos pos)
-                    (player-controller `(POS ,pos))))]
+                (cond
+                  [(mpv-property-event-value event) => (lambda (pos)
+                                                         (player-controller `(POS ,pos)))])]
                [(= pid tags-id)
                 (player-controller `(TAGS ,(mpv-property-event-value event)))]
                [(= pid pause-id)
@@ -129,37 +119,25 @@
                          ,(mpv-property-event-name event)
                          ,(mpv-property-event-value event)))]))]
           [(= eid (mpv-event-type end-file))
+           (cond
+             [(= (mpv-event-end-file-reason (mpv-event-data event)) (mpv-file-end-reason stop))
+              (ui-controller 'stop!)])
            (mpv-unobserve-property pause-id)
            (mpv-unobserve-property tags-id)
            (mpv-unobserve-property time-pos-id)]
           [(= eid (mpv-event-type idle))
-           ;; guess the reason for going idle (stopping).
-           (player-controller `(MPV ,last-pos ,duration))
-           (when (and
-                   (number? duration)
-                   ;; Sometimes the last second won't get a time-pos event so lower duration by one.
-                   ;; This means that pressing stop in the last second won't stop continuous play.
-                   (< last-pos (- duration 1)))
-             ;; Assume that play was manually stopped so generate a fake stop! command otherwise
-             ;; continuous play would just keep going.
-             ;; This is safe to do as mpv-stop won't send another idle at this point.
-             ;; NB: Checking current-pos against total-duration doesn't take into account a user move!
-             ;; operation so this could do with a rethink at some point.
-             ;; However, this only affects mpv video tracks, so acceptable for now.
-             (ui-controller 'stop!))
            (player-controller 'STOPPED)]
           [(= eid (mpv-event-type playback-restart))
            (player-controller '(PLAYING))]
           [(= eid (mpv-event-type file-loaded))
-           ;; reset duration.
-           ;; NB: streams like ice-cast radio stations don't have duration so set them to #f.
-           (set! duration
-             (guard (e [else #f])
-               (mpv-get-property/long "duration")))
            (mpv-observe-property tags-id "metadata" (mpv-format node))
            (mpv-observe-property pause-id "pause" (mpv-format flag))
            (mpv-observe-property time-pos-id "time-pos" (mpv-format int64))
-           (player-controller `(LEN ,duration))]
+           ;; Streaming media like icecast radio stations don't have duration so set them to #f.
+           (let ([duration
+                   (guard (e [else #f])
+                     (mpv-get-property/long "duration"))])
+             (player-controller `(LEN ,duration)))]
           ;; ignore these events.
           [(or
              (= eid (mpv-event-type start-file))
