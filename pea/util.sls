@@ -117,23 +117,22 @@
       [()
        (read-trim-right (current-input-port))]
       [(port)
-       ;; NB char-whitespace? will exception if it sees an eof-object.
-       ;; NB char-skip? allows for a nice easy logic check after 'read'.
-       (define (char-skip? ch)
-         (cond
-           [(eof-object? ch)
-            ;; caller will not want us to skip eof.
-            #f]
-           [else
-             (char-whitespace? ch)]))
-       (let ([ret (read port)])
+       (let ([ret (guard (e [else (eof-object)])
+                    ;; (read) can exception if it encounters a scheme object it doesn't know how to instantiate.
+                    ;; Return EOF, clients case use that to trigger a port close.
+                    (read port))])
          ;; Datum is read into 'ret'. Remove any further whitespace.
          (let loop ()
            (cond
-             [(and (safe-input-port-ready? port)
-                   (char-skip? (peek-char port)))
-              (read-char port)
-              (loop)]
+             [(safe-input-port-ready? port)
+              (let ([ch (peek-char port)])
+                (cond
+                  ;; NB char-whitespace? will exception if it sees an eof-object.
+                  [(eof-object? ch)
+                   ret]
+                  [(char-whitespace? ch)
+                   (read-char port)
+                   (loop)]))]
              [else
                ret])))]))
 
