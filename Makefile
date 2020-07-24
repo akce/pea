@@ -45,26 +45,36 @@ LIBS =	\
 	pea/util.sls		\
 	pea/vfs.sls
 
-BINS =	\
+# PROGS are scheme programs to be compiled.
+PROGS =	\
 	bin/pead.ss	\
 	bin/peace.ss	\
-	bin/peash.ss	\
 	bin/pea-uade.ss
+
+# Scripts are installed as is, without compiling.
+SCRIPTS = \
+	bin/peash.ss
 
 # installed lib sources.
 ILIBS = $(addprefix $(LIBDIR)/,$(LIBS))
 
 # installed shared object binaries (executables) will be without file extension.
-IBINEXE = $(addprefix $(BINDIR)/,$(basename $(notdir $(BINS))))
+IPROGSEXE = $(addprefix $(BINDIR)/,$(basename $(notdir $(PROGS))))
+
+ISCRIPTS = $(addprefix $(BINDIR)/,$(notdir $(SCRIPTS)))
 
 $(LIBDIR)/%.sls: %.sls
 	$(INSTALL) -D -p $< $@
 
-$(BINDIR)/%: bin/%.ss
-	$(ECHO) '(reset-handler abort) (library-directories "'$(LIBDIR)'") (compile-imported-libraries #t) (compile-program "'$<'")' | $(SCHEME) $(SFLAGS)
-	$(MV) -vi $(<:.ss=.so) $@ 
+$(BINDIR)/%.ss: bin/%.ss
+	$(INSTALL) -D -p $< $@
 
-install: $(ILIBS) $(IBINEXE)
+# Note the library-directories setup below ensures our LIBDIR will be first in the search list.
+$(BINDIR)/%: bin/%.ss
+	$(ECHO) '(reset-handler abort) (library-directories `(("'$(LIBDIR)'" . "'$(LIBDIR)'") ,@(library-directories))) (compile-imported-libraries #t) (compile-program "'$<'")' | $(SCHEME) $(SFLAGS)
+	$(MV) -v $(<:.ss=.so) $@
+
+install: $(ILIBS) $(ISCRIPTS) $(IPROGSEXE)
 
 clean:
-	$(RM) $(ILIBS) $(ILIBS:.sls=.so) $(IBINEXE)
+	$(RM) $(ILIBS) $(ILIBS:.sls=.so) $(ISCRIPTS) $(IPROGSEXE)

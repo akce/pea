@@ -6,9 +6,11 @@
     define-enum
     list-slice
     my
+    object->string
     (rename (safe-input-port-ready? input-port-ready?))
     read-trim-right
     reverse-map
+    safe-substring
     slurp
     string-join string-startswith? string-trim-both
     write-now
@@ -93,6 +95,13 @@
        (begin
          (define name val) ...)]))
 
+  ;; [proc] object->string: returns the scheme object in string form.
+  (define object->string
+    (lambda (obj)
+      (call-with-string-output-port
+        (lambda (p)
+          (write obj p)))))
+
   ;; Wraps input-port-ready? so that any raised exception is converted to false.
   ;; The custom port for the socket is raising &i/o-read-error occasionally.
   ;; See: chez s/io.ss ~= /cannot determine ready status/
@@ -138,6 +147,12 @@
            acc]
           [else
             (loop (cdr ls) (cons (proc (car ls)) acc))]))))
+
+  ;; [proc] safe-substring: as substring but returns #f on error rather than exception.
+  (define safe-substring
+    (lambda (str start end)
+      (guard (e [else str])
+        (substring str start end))))
 
   ;; [proc] slurp: Read all lines from a text file.
   ;; Name is akin to the perl function.

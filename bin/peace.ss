@@ -110,17 +110,6 @@
              (loop (cdr ts) (+ i 1))])))]
     ))
 
-(define object->string
-  (lambda (obj)
-    (call-with-string-output-port
-      (lambda (p)
-        (write obj p)))))
-
-(define safe-substring
-  (lambda (str start end)
-    (guard (e [else str])
-      (substring str start end))))
-
 (define make-debug-view
   (lambda ()
     (my
