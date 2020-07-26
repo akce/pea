@@ -112,6 +112,10 @@
         (input-port-ready? port))))
 
   ;; [proc] read-trim-right: performs a read and then trims trailing whitespace.
+  ;; This function requires a whitespace character (ie, newline) to trail the scheme datum
+  ;; which will always be the case when using (write-now).
+  ;; (Except in the case of EOF which marks end of stream.)
+  ;; Trailing a message with a newline ensures that client/server read/event-loops stay healthy.
   (define read-trim-right
     (case-lambda
       [()
@@ -119,22 +123,24 @@
       [(port)
        (let ([ret (guard (e [else (eof-object)])
                     ;; (read) can exception if it encounters a scheme object it doesn't know how to instantiate.
-                    ;; Return EOF, clients case use that to trigger a port close.
                     (read port))])
-         ;; Datum is read into 'ret'. Remove any further whitespace.
-         (let loop ()
-           (cond
-             [(safe-input-port-ready? port)
-              (let ([ch (peek-char port)])
-                (cond
-                  ;; NB char-whitespace? will exception if it sees an eof-object.
-                  [(eof-object? ch)
-                   ret]
-                  [(char-whitespace? ch)
-                   (read-char port)
-                   (loop)]))]
-             [else
-               ret])))]))
+         (cond
+           ;; Nothing is expected past an EOF.
+           [(eof-object? ret)
+            ret]
+           [else
+             ;; NB: this assumes that there'll always be one whitespace (newline) following the scheme datum.
+             ;; If not, peek-char will block!
+             (let ([ch (peek-char port)])
+               (cond
+                 ;; NB char-whitespace? will exception if it sees an eof-object.
+                 [(eof-object? ch)
+                  ret]
+                 [(char-whitespace? ch)
+                  (read-char port)	; remove from port buffer.
+                  ret]
+                 [else
+                   ret]))]))]))
 
   ;; [proc] reverse-map: like map, but list is returned in reverse.
   ;; TODO support multiple lists.
