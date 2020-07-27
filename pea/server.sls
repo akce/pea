@@ -462,6 +462,9 @@
           [(vfs?)
            (make-vfs-info)]
 
+          [(mpv-audio-device mpv-audio-device-set!)
+           (apply player input)]
+
           ;; Bind a media player instance to this controller.
           [(set-player!)
            (set! player (arg input))]

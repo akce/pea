@@ -110,6 +110,90 @@
              (loop (cdr ts) (+ i 1))])))]
     ))
 
+(define make-config-view
+  (lambda (controller)
+    (my
+      [current-audio-device #f]
+      [current-audio-device-pos #f]
+      [cursor-pos #f]
+      [dev-list '()]
+      [audio-devices-window #f])
+
+    ;; Audio device list format: '((("name" . "value") ("description" . "value)) (.......))
+    ;; Use description->value.
+    (define audio-device->string cdadr)
+    ;; Display the object (or as much as will fit) on the line of the screen.
+    (define (draw-audio-device item i w)
+      (mvwaddstr audio-devices-window i 0 (safe-substring (audio-device->string item) 0 w)))
+    (define (draw-selected-audio-device item i w)
+      (wattr-on audio-devices-window A_REVERSE)
+      (mvwaddstr audio-devices-window i 0 (safe-substring (audio-device->string item) 0 w))
+      (wattr-off audio-devices-window A_REVERSE))
+
+    (define (draw-audio-devices-window)
+      (draw-list audio-devices-window dev-list cursor-pos draw-audio-device draw-selected-audio-device))
+    (define (find-device-index devname)
+      (indexp (lambda (x)
+                (string-ci=? devname (cdar x)))
+              dev-list))
+    (define (find-device-name index)
+      (cdar (list-ref dev-list index)))
+    (define (cursor-move dir)
+      (let ([len (length dev-list)]
+            [newpos (+ cursor-pos dir)])
+        (unless (or
+                  (< newpos 0)
+                  (>= newpos len))
+          (set! cursor-pos newpos)
+          (draw-audio-devices-window))
+        #f))
+    (define (save-config)
+      (if (= cursor-pos current-audio-device-pos)
+          #f
+          (controller `(mpv-audio-device-set! ,(find-device-name cursor-pos)))))
+    (case-lambda
+      [(view-command)
+       (case view-command
+         [(create)
+          (set! audio-devices-window (newwin (- LINES 2) (- COLS 2) 1 1))
+          (werase audio-devices-window)
+          (controller '(mpv-audio-device))]
+         [(destroy)
+          (for-each
+            delwin
+            `(,audio-devices-window))
+          (set! cursor-pos #f)
+          (set! audio-devices-window #f)])]
+      [(view-command msg)
+       (case view-command
+         [(control-message)
+          (case (command msg)
+            [(MPV)
+             (case (list-ref msg 1)
+               [(audio-device)
+                (set! current-audio-device (list-ref msg 2))
+                (set! dev-list (list-ref msg 3))
+                (set! current-audio-device-pos (find-device-index current-audio-device))
+                (set! cursor-pos current-audio-device-pos)
+                (draw-audio-devices-window)]
+               [(audio-device-changed)
+                (set! current-audio-device (list-ref msg 2))
+                (set! current-audio-device-pos (find-device-index current-audio-device))
+                (set! cursor-pos current-audio-device-pos)
+                (draw-audio-devices-window)])
+             ])]
+         [(handle-char)
+          (case msg
+            [(#\j)
+             (cursor-move 1)]
+            [(#\k)
+             (cursor-move -1)]
+            [(#\newline)
+             (save-config)]
+            [else
+              #f])])])
+    ))
+
 (define make-debug-view
   (lambda ()
     (my
@@ -264,6 +348,8 @@
             'enter!]
            [(AMIGA AUDIO VIDEO)
             'play!])]
+        [(#\0)
+         '(set! audio-device "alsa/default:CARD=Headset")]
         [(#\h)
          'pop!]
         [(#\H)
@@ -412,6 +498,7 @@
                                    ;; Include mcast-msg-watcher in packet filter to get packet filter debug messages.
                                    (make-packet-filter ctrl-node mcast-msg-watcher))]
       [player-view (make-player-view controller model)]
+      [config-view (make-config-view controller)]
       [debug-view (make-debug-view)]
       [current-view player-view])
 
@@ -430,6 +517,8 @@
           [(#\x)
            #;(ev-io-stop w)
            (ev-break (evbreak 'ALL))]
+          [(#\C)
+           (set-current-view! config-view)]
           [(#\D)
            (set-current-view! debug-view)]
           [(#\P)

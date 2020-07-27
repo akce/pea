@@ -54,6 +54,8 @@
                  [else
                    (error 'player "cannot play! unsupported track type" track)]))
              (current-player 'play! (uri->string (track-uri track))))]
+          [(mpv-audio-device mpv-audio-device-set!)
+           (apply mpv-player input)]
           [else
            (apply current-player input)]))))
 
@@ -82,6 +84,19 @@
            (mpv-command "cycle" "pause")]
           [(stop!)
            (mpv-command "stop")]
+          [(mpv-audio-device)
+           `(MPV audio-device ,(mpv-get-property/string "audio-device") ,(mpv-get-property/node "audio-device-list"))]
+          [(mpv-audio-device-set!)
+           (unless (mpv-get-property/flag "core-idle")
+             ;; Changing the audio-device resets the audio output layer in mpv.
+             ;; For now stop and let the user manually start play again.
+             ;; Pause/unpause may work, but requires a couple of manual toggles before it resumes in my experiments.
+             ;; One cheat way could be to reload the file and auto seek to current position.
+             ;; Or maybe the reload isn't needed? ie, stop!, playlist-play-index, seek to last pos..
+             ;; See mpv/player/audio.c:reload_audio_output()
+             (ui-controller 'stop!))
+           (mpv-set-property "audio-device" (cadr input))
+           'ACK]
           [(get-audio-extensions)
            '()]
           [(get-video-extensions)
@@ -93,7 +108,9 @@
       (define tags-id 1)
       (define time-pos-id 2)
       (define pause-id 3)
+      (define audio-device-id 4)
 
+      (mpv-observe-property audio-device-id "audio-device" (mpv-format string))
       ;; handler: translate MPV relevant events to PEA events then return via callback function.
       (lambda (event)
         (define eid (mpv-event-id event))
@@ -114,9 +131,17 @@
                   (if (mpv-property-event-value event)
                       '(PAUSED)
                       '(PLAYING)))]
+               [(= pid audio-device-id)
+                (player-controller
+                  `(MPV audio-device-changed ,(mpv-get-property/string "audio-device") #;core-idle #;,(mpv-get-property/flag "core-idle") #;,(mpv-get-property/node "playlist")))
+                #;(when (> (length (mpv-get-property/node "playlist")) 0)
+                  (mpv-set-property "pause" #f))
+                #;(unless (mpv-get-property/flag "core-idle")
+                  #;(mpv-command "playlist-play-index" "0")
+                  (mpv-command "playlist-play-index" "0"))]
                [else
                  (player-controller
-                   `(MPV "property-change"
+                   `(MPV property-change
                          ,(mpv-property-event-name event)
                          ,(mpv-property-event-value event)))]))]
           [(= eid (mpv-event-type end-file))
@@ -152,6 +177,6 @@
            (if #f #f)]
           ;; log unknown events.
           [else
-            (player-controller `(MPV ,eid ,(mpv-event-name eid)))])
+            (player-controller `(MPV unknown-event-id ,eid ,(mpv-event-name eid)))])
         )))
   )

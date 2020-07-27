@@ -4,7 +4,7 @@
     command
     condition->doh
     define-enum
-    list-slice
+    indexp list-slice
     my
     object->string
     (rename (safe-input-port-ready? input-port-ready?))
@@ -74,6 +74,19 @@
              [(_ v)
               (eq? (datum v) (syntax->datum #'var*))
               #'val*] ...)))]))
+
+  ;; Like 'find' but returns the 0-based index of the first match for predicate, #f otherwise.
+  (define indexp
+    (lambda (pred lst)
+      (let ([index 0])
+        (if (find
+             (lambda (x)
+               (cond
+                [(pred x) #t]
+                [else (set! index (fx+ index 1)) #f]))
+             lst)
+            index
+            #f))))
 
   ;; [proc] list-slice: return exact slice or as much as able.
   (define list-slice
