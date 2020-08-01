@@ -26,6 +26,7 @@
   (import
     (rnrs)
     (only (chezscheme) display-condition)
+    (pea path)
     (pea player)
     (pea playlist)
     (only (pea util) arg command define-enum my input-port-ready? read-trim-right)
@@ -515,6 +516,12 @@
           [(MPV)
            (write-now input mcast)]
 
+          [(AMIGA_EXTENSIONS)
+           ;; Amiga mod file support is optional. pea-uade will tell us, as part of its
+           ;; startup message, what extensions it supports.
+           ;; Otherwise, pea defaults to none.
+           (set-amiga-extensions! (arg input))
+           input]
           ;; HMMM add a help command?
           [else
             'eh?]))

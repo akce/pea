@@ -48,12 +48,14 @@ LIBS =	\
 # PROGS are scheme programs to be compiled.
 PROGS =	\
 	bin/pead.ss	\
-	bin/peace.ss	\
-	bin/pea-uade.ss
+	bin/peace.ss
 
 # Scripts are installed as is, without compiling.
+# peash.ss is not compiled so that hacking it is easier.
+# pea-uade is not compiled so that UADE support becomes optional.
 SCRIPTS = \
-	bin/peash.ss
+	bin/peash.ss	\
+	bin/pea-uade.ss
 
 # installed lib sources.
 ILIBS = $(addprefix $(LIBDIR)/,$(LIBS))

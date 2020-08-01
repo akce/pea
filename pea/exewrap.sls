@@ -13,7 +13,8 @@
     (lambda (controller binary . args)
       (my
         [exe-command (apply string-join " " "exec" binary args)]
-        [stdin #f])
+        [stdin #f]
+        [stderr #f])
 
       (define make-proc-watcher
          (lambda (from-stdout)
@@ -40,10 +41,17 @@
              ([(to-stdin from-stdout from-stderr process-id)
                (open-process-ports exe-command (buffer-mode block) (native-transcoder))])
              (set! stdin to-stdin)
+             (set! stderr from-stderr)
              (make-proc-watcher from-stdout))))
 
+       ;; Start immediately, that way players can register themselves with the controller.
+       (start-player)
        (lambda msg
-         (unless stdin
-           (start-player))
-         (send-command msg))))
+         (cond
+           [stdin
+            (send-command msg)]
+           [else
+             (error #f exe-command (if (input-port-ready? stderr)
+                                       (get-line stderr)
+                                       "Amiga mod player is down."))]))))
   )

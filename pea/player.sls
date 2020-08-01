@@ -19,9 +19,8 @@
       (my
         [mpv-player (mpv-init ui-controller player-controller)]
         [audio-player mpv-player]
-        ;; FIXME Note the call to pea-uade, it really should exist in a libexec dir and should support both
-        ;; FIXME script (.ss) or compiled versions of the program..
-        [amiga-player (make-exeplayer player-controller "pea-uade")]
+        ;; FIXME Note the call to pea-uade.ss, it really should exist in a pea/libexec dir.
+        [amiga-player (make-exeplayer player-controller "pea-uade.ss")]
         [current-player #f])
 
       (define video-player
@@ -35,7 +34,6 @@
             (set-video-extensions! '("mp4" "mkv" "webm" "avi" "m4v"))
             mpv-player]))
 
-      (set-amiga-extensions! '("mod" "hip" "hipc"))
       (set-audio-extensions! '("mp3" "flac" "aac" "m4a" "wv" "wav" "ogg"))
 
       (lambda input

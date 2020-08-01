@@ -144,6 +144,11 @@
                      (write-now `(DOH "unknown command" ,msg) (current-output-port))]
                    )))))
 
+    ;; PEA expects us to tell it what file extensions we support so output that
+    ;; as our startup message.
+    ;; TODO fill this list out.
+    (write-now '(AMIGA_EXTENSIONS ("mod" "hip" "hipc")) (current-output-port))
+
     (ev-run)
     (uade-free framebuf))
   (uade-cleanup-state uade-state)
