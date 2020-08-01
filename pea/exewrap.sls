@@ -6,13 +6,13 @@
     (rnrs)
     (ev)
     (only (chezscheme) input-port-ready? open-process-ports port-file-descriptor)
-    (only (pea util) my read-trim-right write-now)
+    (only (pea util) my read-trim-right string-join write-now)
     )
 
   (define make-exeplayer
-    (lambda (controller . args)
+    (lambda (controller binary . args)
       (my
-        [exe-command (apply string-append "exec " args)]
+        [exe-command (apply string-join " " "exec" binary args)]
         [stdin #f])
 
       (define make-proc-watcher
