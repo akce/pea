@@ -34,7 +34,7 @@
             (set-video-extensions! '("mp4" "mkv" "webm" "avi" "m4v"))
             mpv-player]))
 
-      (set-audio-extensions! '("mp3" "flac" "aac" "m4a" "wv" "wav" "ogg"))
+      (set-audio-extensions! '("mp3" "flac" "opus" "aac" "m4a" "wv" "wav" "ogg"))
 
       (lambda input
         (case (car input)
