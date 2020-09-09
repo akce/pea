@@ -9,6 +9,7 @@
     ;; Model of pea server state.
     make-model
     model-vpath model-cursor model-title model-type model-state model-pos model-duration model-tags model-tracks
+    model-volume model-mute
     get-title-string
     cache-message-info
     ;; Server message accessors.
@@ -181,6 +182,10 @@
       [mutable		tags]
 
       [mutable		tracks]
+
+      ;; System.
+      [mutable		volume]
+      [mutable		mute]
       )
     (protocol
       (lambda (new)
@@ -191,7 +196,9 @@
             ;; track/playback
             #f #f #f '()
             ;; tracks
-            #f)))))
+            #f
+            ;; system
+            0 #f)))))
 
   ;; [proc] cache-message-info: Extract and save useful info received from pea-server.
   (define cache-message-info
@@ -222,6 +229,9 @@
          (model-cursor-set! model (vfs-info-cursor msg))
          (model-title-set! model (vfs-info-track-title msg))
          (model-type-set! model (vfs-info-track-type msg))]
+        [(VOL)
+         (model-volume-set! model (list-ref msg 1))
+         (model-mute-set! model (list-ref msg 2))]
         )))
 
   (define state-info-state

@@ -8,7 +8,7 @@
 
 (import
   (rnrs)
-  (only (chezscheme) command-line-arguments getenv list-tail meta-cond)
+  (only (chezscheme) command-line-arguments flonum->fixnum getenv iota list-tail meta-cond)
   (ev)
   (ncurses)
   (pea client)
@@ -340,6 +340,31 @@
           (mvwhline stdscr 0 1 ACS_HLINE (- COLS 2))])
          (wnoutrefresh stdscr))
 
+    (define (draw-volume-window)
+      (let ([win stdscr]
+            [xpos 0]
+            [vol (model-volume model)]
+            [on-char
+              (if (model-mute model)
+                  ACS_BOARD
+                  ACS_BLOCK)])
+        (let* ([lines (getmaxy win)]
+               [yborder 2]
+               [ylen (- lines (* yborder 2))]
+               [onlen (flonum->fixnum (inexact (* (/ vol 100) ylen)))]
+               [offlen (- ylen onlen)])
+          (mvwaddch win 1 xpos ACS_BTEE)
+          (mvwaddch win (- lines 2) xpos ACS_TTEE)
+          (for-each
+            (lambda (y)
+              (mvwaddch win (+ y offlen yborder) xpos on-char))
+            (iota onlen))
+          (for-each
+            (lambda (y)
+              (mvwaddch win (+ y yborder) xpos ACS_CKBOARD))
+            (iota offlen)))
+          (wnoutrefresh win)))
+
     (define (char->pea-command ch)
       (case ch
         [(#\newline)
@@ -348,8 +373,6 @@
             'enter!]
            [(AMIGA AUDIO VIDEO)
             'play!])]
-        [(#\0)
-         '(set! audio-device "alsa/default:CARD=Headset")]
         [(#\h)
          'pop!]
         [(#\H)
@@ -366,6 +389,8 @@
          '(move! 10)]
         [(#\K)
          '(move! -10)]
+        [(#\m)
+         '(mpv-toggle-mute!)]
         [(#\r #\R)
          '(refresh!)]
         [(#\ą)		; right arrow
@@ -376,6 +401,11 @@
          '(seek! 600)]
         [(#\Ă)		; down arrow
          '(seek! -600)]
+        ;; Follow mpv keys for volume control here.
+        [(#\9)
+         '(mpv-volume-adjust! -5)]
+        [(#\0)
+         '(mpv-volume-adjust! 5)]
         [else
           #f]))
 
@@ -393,7 +423,7 @@
           (draw-tags-window)
           (draw-playlist-window)
           (draw-vfs-window)
-          ]
+          (draw-volume-window)]
          [(destroy)
           (for-each
             delwin
@@ -432,7 +462,9 @@
                    (lambda (vp)
                      (controller 'tracks?))]
                   [else
-                    (draw-playlist-window)])])]
+                    (draw-playlist-window)])]
+               [(VOL)
+                (draw-volume-window)])]
             #;[else
               ;; Otherwise msg is a singleton, most likely ACK.
               ;; HMMM Maybe everything (including ACKs) should be in a list?
