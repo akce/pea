@@ -123,6 +123,7 @@
       (write-now (ui-controller 'state?) client-port)
       (write-now (ui-controller 'len?) client-port)
       (write-now (ui-controller 'pos?) client-port)
+      (write-now (ui-controller '(mpv-volume)) client-port)
       (write-now (ui-controller 'tags?) client-port)
       (write-now (ui-controller 'vfs?) client-port)
 
@@ -463,7 +464,10 @@
           [(vfs?)
            (make-vfs-info)]
 
-          [(mpv-audio-device mpv-audio-device-set!)
+          ;;;; MPV controls.
+          ;; So far, that's mpv's soft-volume and audio-device.
+          [(mpv-volume mpv-volume-adjust! mpv-set-volume! mpv-volume-max! mpv-toggle-mute!
+            mpv-audio-device mpv-audio-device-set!)
            (apply player input)]
 
           ;; Bind a media player instance to this controller.
@@ -512,8 +516,8 @@
           [(TAGS)
            (set! track-tags (arg input))
            (write-now (make-track-tags track-tags) mcast)]
-          ;; mpv debug message.
-          [(MPV)
+          ;; Pass-through mpv debug and volume messages.
+          [(MPV VOL)
            (write-now input mcast)]
 
           [(AMIGA_EXTENSIONS)

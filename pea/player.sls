@@ -52,13 +52,22 @@
                  [else
                    (error 'player "cannot play! unsupported track type" track)]))
              (current-player 'play! (uri->string (track-uri track))))]
-          [(mpv-audio-device mpv-audio-device-set!)
+          [(mpv-volume mpv-volume-adjust! mpv-toggle-mute! mpv-set-volume! mpv-volume-max! mpv-audio-device mpv-audio-device-set!)
            (apply mpv-player input)]
           [else
            (apply current-player input)]))))
 
   (define mpv-init
     (lambda (ui-controller player-controller)
+      ;; Default mpv value for volume-max is 130.0, set to 100 as it:
+      ;; - makes volume calculations simpler
+      ;; - reduces chance of mpv softvol distortion at higher values
+      ;; - and leaves it up to setting a good alsa PCM value system-wide.
+      ;; In future, we may add a native alsa mixer config (either direct or via amixer).
+      (define max-volume 100.0)
+      (define volume-limit
+        (lambda (value)
+          (min max-volume (max 0 value))))
       (mpv-create)
       (mpv-set-property "audio-display" #f)	; disable mpv embedded coverart display. 
       ;; Turn on keyboard input for videos.
@@ -67,6 +76,8 @@
       (mpv-set-option "osc" #t)
       (mpv-set-option "user-agent" "PEA (Play 'Em All)/3.0")
       (mpv-initialize)
+      (mpv-set-property/double "volume-max" max-volume)
+      (mpv-set-property/double "volume" 50.0)
       ;; Rebind default problem keys. Namely, 'q' must *not* shutdown. Stop instead.
       (mpv-command "keybind" "q" "stop")
       ;; Default 's' action is to take a screenshot, but pea can't guarantee write access. Stop instead.
@@ -82,6 +93,22 @@
            (mpv-command "cycle" "pause")]
           [(stop!)
            (mpv-command "stop")]
+          [(mpv-toggle-mute!)
+           (mpv-command "cycle" "mute")
+           'ACK]
+          [(mpv-volume-adjust!)		; arg +/- adjust%
+           (mpv-set-property/double "volume" (volume-limit (+ (mpv-get-property/node "volume") (cadr input))))
+           'ACK]
+          [(mpv-volume)		; returns current volume percent.
+           (make-volume-message)]
+          [(mpv-set-volume!)	; arg absolute-new-volume%
+           ;; Set new volume level.
+           (mpv-set-property/double "volume" (volume-limit (cadr input)))
+           'ACK]
+          [(mpv-volume-max!)
+           ;; This is more of an internal, tinker value and shouldn't really need to change.
+           (mpv-set-property/double "volume-max" (cadr input))
+           'ACK]
           [(mpv-audio-device)
            `(MPV audio-device ,(mpv-get-property/string "audio-device") ,(mpv-get-property/node "audio-device-list"))]
           [(mpv-audio-device-set!)
@@ -107,8 +134,12 @@
       (define time-pos-id 2)
       (define pause-id 3)
       (define audio-device-id 4)
+      (define volume-id 5)
+      (define mute-id 6)
 
       (mpv-observe-property audio-device-id "audio-device" (mpv-format string))
+      (mpv-observe-property volume-id "volume" (mpv-format int64))
+      (mpv-observe-property mute-id "mute" (mpv-format flag))
       ;; handler: translate MPV relevant events to PEA events then return via callback function.
       (lambda (event)
         (define eid (mpv-event-id event))
@@ -137,6 +168,8 @@
                 #;(unless (mpv-get-property/flag "core-idle")
                   #;(mpv-command "playlist-play-index" "0")
                   (mpv-command "playlist-play-index" "0"))]
+               [(or (= pid volume-id) (= pid mute-id))
+                (player-controller (make-volume-message))]
                [else
                  (player-controller
                    `(MPV property-change
@@ -177,4 +210,11 @@
           [else
             (player-controller `(MPV unknown-event-id ,eid ,(mpv-event-name eid)))])
         )))
+
+  (define make-volume-message
+    (case-lambda
+      [()
+       (make-volume-message (mpv-get-property/long "volume"))]
+      [(volume)
+       `(VOL ,volume ,(mpv-get-property/node "mute"))]))
   )
